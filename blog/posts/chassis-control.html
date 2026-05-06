@@ -48,7 +48,7 @@
 
         <h2>1. 引言</h2>
         <p>
-          在 RoboMaster 竞赛中，哨兵机器人需要沿着轨道自主巡逻并识别、打击敌方机器人。其底盘采用了一种混合构型：前侧为两个固定的全向轮，后侧为两个可独立转向的舵轮——即"半舵半全向"布局。这种构型兼顾了全向移动的灵活性与舵轮驱动的高扭矩优势，但给控制带来了不小的挑战：六个电机（两个舵向电机 + 四个轮向电机）需要协调工作以产生期望的底盘合力与合力矩，而控制方程却是欠定的。
+          在 RoboMaster 竞赛中，我们尝试了一种混合底盘构型：前侧为两个固定的全向轮，后侧为两个可独立转向的舵轮——即"半舵半全向"布局。这种构型兼顾了全向移动的灵活性与舵轮驱动的高扭矩优势，但给控制带来了不小的挑战：六个电机（两个舵向电机 + 四个轮向电机）需要协调工作以产生期望的底盘合力与合力矩，而控制方程却是欠定的。
         </p>
         <p>本文系统地梳理该底盘从速度解算到力矩分配的完整控制流程，核心步骤为：</p>
         <ol>
@@ -152,7 +152,31 @@
           \sin\beta & \cos\beta & c
         \end{pmatrix}
         $$
-        <p>过程噪声协方差矩阵 $\boldsymbol{Q}$ 和测量噪声协方差矩阵 $\boldsymbol{R}$ 的设定是关键，它们决定了滤波器对模型预测和实际测量的相对信任程度，需要根据实验效果反复调节。</p>
+        <p>标准离散卡尔曼滤波的五个方程在此具体化为：</p>
+        <p><strong>预测步：</strong></p>
+        $$
+        \boldsymbol{x}_k^- = \boldsymbol{F}_k \boldsymbol{x}_{k-1} + \boldsymbol{B}_k \boldsymbol{u}_k = \boldsymbol{F}_k \boldsymbol{x}_{k-1} \quad (\boldsymbol{u}_k = \boldsymbol{0})
+        $$
+        $$
+        \boldsymbol{P}_k^- = \boldsymbol{F}_k \boldsymbol{P}_{k-1} \boldsymbol{F}_k^\mathsf{T} + \boldsymbol{Q}
+        $$
+        <p><strong>更新步：</strong></p>
+        $$
+        \boldsymbol{K}_k = \boldsymbol{P}_k^- \boldsymbol{H}_k^\mathsf{T} (\boldsymbol{H}_k \boldsymbol{P}_k^- \boldsymbol{H}_k^\mathsf{T} + \boldsymbol{R})^{-1}
+        $$
+        $$
+        \boldsymbol{x}_k = \boldsymbol{x}_k^- + \boldsymbol{K}_k (\boldsymbol{z}_k - \boldsymbol{H}_k \boldsymbol{x}_k^-)
+        $$
+        $$
+        \boldsymbol{P}_k = (\boldsymbol{I} - \boldsymbol{K}_k \boldsymbol{H}_k) \boldsymbol{P}_k^-
+        $$
+
+        <p>
+          其中 $\boldsymbol{x}_k^-$ 和 $\boldsymbol{P}_k^-$ 分别为先验状态估计和先验误差协方差，$\boldsymbol{K}_k$ 为卡尔曼增益，$\boldsymbol{x}_k$ 和 $\boldsymbol{P}_k$ 为后验状态估计和后验误差协方差。$\boldsymbol{H}_k$ 的计算见上文——它依赖于每一时刻的舵向角 $\delta_2, \delta_3$，因此需要在每个控制周期中重新计算。
+        </p>
+        <p>
+          过程噪声协方差矩阵 $\boldsymbol{Q}$ 和测量噪声协方差矩阵 $\boldsymbol{R}$ 的设定是滤波器表现的关键。$\boldsymbol{Q}$ 反映了我们对"速度恒定"这一假设的信任程度——值越大，滤波器越倾向于相信测量；$\boldsymbol{R}$ 反映了对轮速传感器噪声水平的估计——值越大，滤波器越倾向于相信模型预测。在没有外部参考速度的情况下，可以先用 Moore-Penrose 伪逆的直接解算结果作为参考，观察滤波器的滞后表现，据此调节两个协方差矩阵。此外，还可以结合卡方检验等方法来判断测量值的可信度，进一步提高估计的准确性。
+        </p>
 
         <h2>5. 初步力分配：Moore-Penrose 广义逆</h2>
         <p>当舵向角 $\delta_2, \delta_3$ 由速度正解算确定后，剩下四个轮向电机需要提供期望的合力与合力矩 $(F_x^c, F_y^c, T^c)$。</p>
