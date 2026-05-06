@@ -13,9 +13,9 @@
     {
       title: 'Semi-Steering Semi-Omni Chassis Control: From Velocity Decomposition to Torque Distribution',
       date: '2025-01-15',
-      excerpt: '系统地梳理半舵半全向底盘的核心控制链路：速度正解算、卡尔曼滤波逆向观测、Moore-Penrose广义逆力分配、零空间打滑补偿、重心偏移力矩平衡与功率控制。',
+      excerpt: 'A systematic treatment of the semi-steering, semi-omni chassis control pipeline: forward kinematics, Kalman-filter velocity observation, Moore-Penrose pseudoinverse force distribution, center-of-gravity normal-force estimation, ternary search optimization, and power control.',
       url: 'posts/chassis-control.html',
-      tags: ['RoboMaster', '嵌入式', '控制']
+      tags: ['RoboMaster', 'Embedded', 'Control']
     }
   ];
 
