@@ -3,36 +3,34 @@
    Design: Clean, modern, responsive
    ============================================================ */
 
-/* --- Google Fonts --- */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&display=swap');
+/* --- System Fonts (zero external requests) --- */
 
 /* --- CSS Variables --- */
 :root {
-  --color-primary: #1a365d;
-  --color-primary-light: #2c5282;
-  --color-accent: #c8943e;
-  --color-accent-light: #e6c87c;
-  --color-bg: #fafaf9;
-  --color-bg-alt: #f2f0ed;
+  --color-primary: #0f2b46;
+  --color-primary-light: #1a4a7a;
+  --color-accent: #b8860b;
+  --color-accent-light: #d4a843;
+  --color-bg: #fafaf8;
+  --color-bg-alt: #f3f1ec;
   --color-surface: #ffffff;
-  --color-text: #2d3748;
-  --color-text-light: #5a6c7d;
-  --color-text-muted: #8899a6;
-  --color-border: #e2e0dc;
-  --color-success: #38a169;
+  --color-text: #1e293b;
+  --color-text-light: #475569;
+  --color-text-muted: #94a3b8;
+  --color-border: #e8e5df;
 
-  --font-heading: 'Playfair Display', 'Noto Serif SC', 'SimSun', serif;
-  --font-body: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-heading: 'Georgia', 'Noto Serif SC', 'SimSun', 'Times New Roman', serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.06);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.08);
   --shadow-xl: 0 20px 60px rgba(0,0,0,0.10);
 
   --radius-sm: 6px;
-  --radius-md: 12px;
-  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-lg: 24px;
 
   --max-width: 1100px;
   --nav-height: 64px;
@@ -231,6 +229,17 @@ h1, h2, h3, h4 {
     rgba(26,54,93,0.01) 50%,
     transparent 70%);
   pointer-events: none;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(26,54,93,0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 60% 60% at 70% 40%, black 30%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 60% at 70% 40%, black 30%, transparent 70%);
 }
 
 .hero-inner {
