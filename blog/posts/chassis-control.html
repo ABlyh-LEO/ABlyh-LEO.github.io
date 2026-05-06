@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="An in-depth technical discussion of the semi-steering semi-omni chassis control system for the RoboMaster sentinel robot, covering forward/inverse kinematics, force distribution via Moore-Penrose pseudoinverse, slip compensation, center-of-gravity moment balancing, and power control.">
-  <title>Semi-Steering Semi-Omni Chassis Control — Yanhong Liu's Blog</title>
+  <meta name="description" content="系统地梳理半舵半全向底盘的核心控制链路：速度正解算、卡尔曼滤波、Moore-Penrose广义逆力分配、重心偏移正压力估计、转速反馈比例调整与三分法寻优、功率控制。">
+  <title>半舵半全向底盘控制：从速度解算到力矩分配的系统性思路 — Yanhong Liu's Blog</title>
   <link rel="stylesheet" href="../../css/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
   <script>
@@ -48,348 +48,282 @@
 
         <h2>1. 引言</h2>
         <p>
-          在 RoboMaster 竞赛中，哨兵机器人需要沿着轨道自主巡逻并识别、打击敌方机器人。
-          其底盘系统采用了一种混合构型：前侧为两个固定的全向轮，后侧为两个可独立转向的舵轮——即"半舵半全向"布局。
-          这种构型兼顾了全向移动的灵活性与舵轮驱动的高扭矩优势，但给控制带来了不小的挑战：
-          六个电机（两个舵向电机 + 四个轮向电机）需要协调工作以产生期望的底盘合力与合力矩，
-          而控制方程却是欠定的。
+          在 RoboMaster 竞赛中，哨兵机器人需要沿着轨道自主巡逻并识别、打击敌方机器人。其底盘采用了一种混合构型：前侧为两个固定的全向轮，后侧为两个可独立转向的舵轮——即"半舵半全向"布局。这种构型兼顾了全向移动的灵活性与舵轮驱动的高扭矩优势，但给控制带来了不小的挑战：六个电机（两个舵向电机 + 四个轮向电机）需要协调工作以产生期望的底盘合力与合力矩，而控制方程却是欠定的。
         </p>
-        <p>
-          本文系统地梳理了该底盘从速度解算到力矩分配的完整控制流程，并讨论了重心偏移补偿与功率限制等实际工程问题。
-          核心步骤为：
-        </p>
+        <p>本文系统地梳理该底盘从速度解算到力矩分配的完整控制流程，核心步骤为：</p>
         <ol>
           <li>通过速度分解确定舵向电机的目标转角；</li>
           <li>计算底盘的期望合力和合力矩；</li>
           <li>利用 Moore-Penrose 广义逆进行初步力分配；</li>
-          <li>通过零空间调整优化力分配，处理打滑等异常情况；</li>
+          <li>基于重心偏移估计正压力比例，结合轮速反馈调整目标比例，再利用三分法在零空间中寻找最优解；</li>
           <li>进行功率限制与电流限幅。</li>
         </ol>
 
         <h2>2. 坐标系与记号约定</h2>
         <p>
-          我们规定：底盘安装有两个全向轮的一侧为前侧，对应 $+x$ 方向；底盘平面内与其正交的方向为 $+y$（向左）；
-          利用右手系确定 $+z$ 向上（即安装云台的方向）。底盘的中心记为 $O$，
-          四个轮子分别位于底盘的四个象限，沿 $x$ 方向的半长为 $a$，沿 $y$ 方向的半长为 $b$，
-          记 $c = \sqrt{a^2 + b^2}$，$\beta = \arccos(a/c)$。
+          我们规定：底盘安装有两个全向轮的一侧为前侧，对应 $+x$ 方向；底盘平面内与其正交的方向为 $+y$（向左）；利用右手系确定 $+z$ 向上（即安装云台的方向）。四个轮子分别位于底盘的四个象限，沿 $x$ 方向的轮距半长为 $a$，沿 $y$ 方向的轮距半长为 $b$，记 $c = \sqrt{a^2 + b^2}$，$\beta = \arccos(a/c)$。
         </p>
-        <p>以下是本文使用的核心记号：</p>
+        <p>核心记号：</p>
         <ul>
           <li>$F_x^c, F_y^c, T^c$ —— 底盘期望合力在 $+x$、$+y$ 方向的分量及绕 $+z$ 轴的合力矩；</li>
           <li>$v_x^c, v_y^c, \omega^c$ —— 底盘中心在 $+x$、$+y$ 方向的速度及绕 $+z$ 轴的角速度；</li>
-          <li>$F_1, v_1$ —— 位于第一象限的全向轮提供的力与速度，正方向含 $+x$ 分量；</li>
-          <li>$F_2, \delta_2, v_2$ —— 位于第二象限的舵轮提供的力、舵向与 $+x$ 的夹角以及轮速；</li>
-          <li>$F_3, \delta_3, v_3$ —— 位于第三象限的舵轮提供的力、舵向与 $+x$ 的夹角以及轮速；</li>
-          <li>$F_4, v_4$ —— 位于第四象限的全向轮提供的力与速度，正方向含 $+x$ 分量。</li>
+          <li>$F_1, v_1$ —— 位于第一象限的全向轮提供的力与速度；</li>
+          <li>$F_2, \delta_2, v_2$ —— 位于第二象限的舵轮提供的力、舵向角及轮速；</li>
+          <li>$F_3, \delta_3, v_3$ —— 位于第三象限的舵轮提供的力、舵向角及轮速；</li>
+          <li>$F_4, v_4$ —— 位于第四象限的全向轮提供的力与速度。</li>
         </ul>
 
         <h2>3. 正向运动学：速度解算</h2>
         <p>
-          正向运动学的目的是从底盘中心的目标速度 $(v_x^c, v_y^c, \omega^c)$ 解算出每个轮子的期望速度以及舵轮的期望转角。
+          正向运动学的目的是从底盘中心的目标速度 $(v_x^c, v_y^c, \omega^c)$ 解算出每个轮子的期望速度以及舵轮的期望转角。由刚体运动学，每个轮子处的速度等于底盘中心的平动速度与绕中心转动的线速度之和，可得：
         </p>
-        <h3>3.1 速度分解关系</h3>
+
+        $$
+        \begin{pmatrix}
+          1 & 0 & 0 & 0 \\
+          0 & \cos\delta_2 & 0 & 0 \\
+          0 & \sin\delta_2 & 0 & 0 \\
+          0 & 0 & \cos\delta_3 & 0 \\
+          0 & 0 & \sin\delta_3 & 0 \\
+          0 & 0 & 0 & 1
+        \end{pmatrix}
+        \begin{pmatrix} v_1 \\ v_2 \\ v_3 \\ v_4 \end{pmatrix}
+        =
+        \begin{pmatrix}
+          \sin\beta & -\cos\beta & -c \\
+          1 & 0 & -b \\
+          0 & 1 & -a \\
+          1 & 0 & b \\
+          0 & 1 & -a \\
+          \sin\beta & \cos\beta & c
+        \end{pmatrix}
+        \begin{pmatrix} v_x^c \\ v_y^c \\ \omega^c \end{pmatrix}
+        $$
+
+        <p>将左侧矩阵记为 $\boldsymbol{A}$，右侧矩阵记为 $\boldsymbol{B}$。因为 $\boldsymbol{A}$ 结构非常简单，我们可以十分容易地利用其 Moore-Penrose 广义逆 $\boldsymbol{A}^+$ 求解：</p>
+
+        $$
+        \begin{pmatrix} v_1 \\ v_2 \\ v_3 \\ v_4 \end{pmatrix}
+        = \boldsymbol{A}^+ \boldsymbol{B} \begin{pmatrix} v_x^c \\ v_y^c \\ \omega^c \end{pmatrix}
+        $$
+
+        <p>由此我们获得了四个轮子的期望速度 $v_1, v_2, v_3, v_4$，以及舵轮的期望角度 $\delta_2$ 和 $\delta_3$（由速度方向获得）。</p>
+
+        <h3>为什么先确定舵向？</h3>
         <p>
-          由刚体运动学，每个轮子处的速度等于底盘中心的平动速度与绕中心转动的线速度之和。
-          对四个轮子分别写出速度关系，可得如下矩阵方程：
+          一个自然的想法是：能否直接从力分配方程中同时解出轮向力和舵向角度？如果这样做，我们面对的是由 3 个非线性方程解 6 个未知量（四个力 + 两个角度），非常困难。而如果先通过速度正解算确定舵向角度，力分配问题就退化为一个<em>欠定线性方程组</em>——将舵向与力分配分离，是整个控制架构中最关键的工程判断。
         </p>
 
-        <div class="math-block">
-          \begin{pmatrix}
-            1 & 0 & 0 & 0 \\
-            0 & \cos\delta_2 & 0 & 0 \\
-            0 & \sin\delta_2 & 0 & 0 \\
-            0 & 0 & \cos\delta_3 & 0 \\
-            0 & 0 & \sin\delta_3 & 0 \\
-            0 & 0 & 0 & 1
-          \end{pmatrix}
-          \begin{pmatrix} v_1 \\ v_2 \\ v_3 \\ v_4 \end{pmatrix}
-          =
-          \begin{pmatrix}
-            \sin\beta & -\cos\beta & -c \\
-            1 & 0 & -b \\
-            0 & 1 & -a \\
-            1 & 0 & b \\
-            0 & 1 & -a \\
-            \sin\beta & \cos\beta & c
-          \end{pmatrix}
-          \begin{pmatrix} v_x^c \\ v_y^c \\ \omega^c \end{pmatrix}
-        </div>
+        <h2>4. 逆向运动学：卡尔曼滤波观测速度</h2>
+        <p>逆向运动学的任务是从四个轮子的实测速度反推出底盘中心的真实速度 $(v_x^c, v_y^c, \omega^c)$。</p>
 
-        <p>将左侧矩阵记为 $\boldsymbol{A}$，右侧矩阵记为 $\boldsymbol{B}$。此方程可简洁地写为：</p>
-
-        <div class="math-block">
-          \begin{pmatrix} v_1 \\ v_2 \\ v_3 \\ v_4 \end{pmatrix}
-          = \boldsymbol{A}^+ \boldsymbol{B} \begin{pmatrix} v_x^c \\ v_y^c \\ \omega^c \end{pmatrix}
-        </div>
-
+        <h3>为什么需要滤波？</h3>
         <p>
-          其中 $\boldsymbol{A}^+$ 表示 $\boldsymbol{A}$ 的 Moore-Penrose 广义逆。因为 $\boldsymbol{A}$ 结构非常简单，
-          这里的计算极为简便。由此我们获得了四个轮子的期望速度 $v_1, v_2, v_3, v_4$，
-          以及舵轮的期望角度 $\delta_2$ 和 $\delta_3$（可由速度方向直接获得）。
+          直接使用 Moore-Penrose 伪逆虽然简单快捷，但存在两个问题：测量噪声导致的结果不光滑，对后续 PID 控制不友好；某些轮子打滑时，它们提供的信息不可靠，应降低权重。为此我们使用卡尔曼滤波器进行状态估计。
         </p>
 
-        <h3>3.2 为什么先确定舵向？</h3>
+        <h3>滤波器设计</h3>
+        <p>状态向量：</p>
+        $$
+        \boldsymbol{x} = (v_x^c, v_y^c, \omega^c)^\top
+        $$
+        <p>观测量：</p>
+        $$
+        \boldsymbol{z} = (v_1, v_2, v_3, v_4)^\top
+        $$
         <p>
-          一个自然的想法是：能否直接从力分配方程中同时解出轮向力和舵向角度？如果这样做，
-          我们面对的是由 3 个非线性方程解 6 个未知量（四个力的大小 + 两个舵向角度），这是非常困难的。
-          而如果先通过速度正解算确定舵向角度，力分配问题就退化为一个<em>欠定线性方程组</em>——
-          这极大地简化了后续处理。将舵向与力分配分离，是整个控制架构中最关键的工程判断之一。
+          由于底盘加速度难以直接获取，我们假设底盘中心速度和角速度在相邻时钟周期之间保持恒定（$\boldsymbol{u}_k = \boldsymbol{0}$）。考虑惯性系下的运动：上一个时钟周期内底盘绕自身中心转过角度 $\omega\, dt$，当前周期惯性系下的速度需通过二维旋转获得：
         </p>
+        $$
+        \boldsymbol{F}_k =
+        \begin{pmatrix}
+          \cos(\omega\, dt) & \sin(\omega\, dt) & 0 \\
+          -\sin(\omega\, dt) & \cos(\omega\, dt) & 0 \\
+          0 & 0 & 1
+        \end{pmatrix}
+        $$
+        <p>观测矩阵取为 $\boldsymbol{H}_k = \boldsymbol{A}^+ \boldsymbol{B}$（直接利用正向运动学中的关系）：</p>
+        $$
+        \boldsymbol{H}_k =
+        \begin{pmatrix}
+          \sin\beta & -\cos\beta & c \\
+          \cos\delta_2 & \sin\delta_2 & -b\cos\delta_2 - a\sin\delta_2 \\
+          \cos\delta_3 & \sin\delta_3 & b\cos\delta_3 - a\sin\delta_3 \\
+          \sin\beta & \cos\beta & c
+        \end{pmatrix}
+        $$
+        <p>过程噪声协方差矩阵 $\boldsymbol{Q}$ 和测量噪声协方差矩阵 $\boldsymbol{R}$ 的设定是关键，它们决定了滤波器对模型预测和实际测量的相对信任程度，需要根据实验效果反复调节。</p>
 
-        <h2>4. 逆向运动学：卡尔曼滤波</h2>
-        <p>
-          逆向运动学的任务是从四个轮子的实测速度反推出底盘中心的真实速度 $(v_x^c, v_y^c, \omega^c)$，
-          这个过程称为速度观测。
-        </p>
-        <h3>4.1 为什么需要滤波？</h3>
-        <p>
-          直接使用 Moore-Penrose 伪逆求解（即 $\boldsymbol{B}^+ \boldsymbol{A} (v_1, v_2, v_3, v_4)^\top$）
-          虽然简单快捷，但存在两个问题：一是测量噪声导致的结果不光滑，
-          对后续 PID 控制不友好；二是某些轮子可能打滑，它们提供的信息不可靠，应该降低其权重。
-          为此，我们使用卡尔曼滤波器进行状态估计。
-        </p>
-
-        <h3>4.2 滤波器设计</h3>
-        <p>状态向量取为底盘中心的速度和角速度：</p>
-        <div class="math-block">
-          \boldsymbol{x} = (v_x^c, v_y^c, \omega^c)^\top
-        </div>
-        <p>观测量取为四个轮子的速度：</p>
-        <div class="math-block">
-          \boldsymbol{z} = (v_1, v_2, v_3, v_4)^\top
-        </div>
-        <p>
-          由于底盘加速度难以直接获取，我们假设底盘中心速度和角速度在相邻时钟周期之间保持恒定（即 $\boldsymbol{u}_k = \boldsymbol{0}$）。
-          在此基础上，考虑惯性系下的运动：前一个时钟周期内底盘绕自身中心转过角度 $\omega\, dt$，
-          因此当前周期惯性系下的速度需通过二维旋转获得：
-        </p>
-        <div class="math-block">
-          \boldsymbol{F}_k =
-          \begin{pmatrix}
-            \cos(\omega\, dt) & \sin(\omega\, dt) & 0 \\
-            -\sin(\omega\, dt) & \cos(\omega\, dt) & 0 \\
-            0 & 0 & 1
-          \end{pmatrix}
-        </div>
-        <p>观测矩阵取为 $\boldsymbol{H}_k = \boldsymbol{A}^+ \boldsymbol{B}$（利用了正向运动学中的关系）：</p>
-        <div class="math-block">
-          \boldsymbol{H}_k =
-          \begin{pmatrix}
-            \sin\beta & -\cos\beta & c \\
-            \cos\delta_2 & \sin\delta_2 & -b\cos\delta_2 - a\sin\delta_2 \\
-            \cos\delta_3 & \sin\delta_3 & b\cos\delta_3 - a\sin\delta_3 \\
-            \sin\beta & \cos\beta & c
-          \end{pmatrix}
-        </div>
-        <p>标准离散卡尔曼滤波的五个方程在此不再赘述。关键在于过程噪声协方差矩阵 $\boldsymbol{Q}$ 和
-          测量噪声协方差矩阵 $\boldsymbol{R}$ 的设定——它们决定了滤波器对模型预测和实际测量的相对信任程度，
-          通常需要根据实验效果反复调节。
-        </p>
-
-        <h2>5. 力分配解算</h2>
+        <h2>5. 初步力分配：Moore-Penrose 广义逆</h2>
         <p>当舵向角 $\delta_2, \delta_3$ 由速度正解算确定后，剩下四个轮向电机需要提供期望的合力与合力矩 $(F_x^c, F_y^c, T^c)$。</p>
 
-        <h3>5.1 基本力平衡方程</h3>
-        <p>根据力的分解和力矩平衡，容易写出如下关系：</p>
-        <div class="math-block">
-          \underbrace{
-          \begin{pmatrix}
-            \frac{b}{c} & \cos\delta_2 & \cos\delta_3 & \frac{b}{c} \\[4pt]
-            -\frac{a}{c} & \sin\delta_2 & \sin\delta_3 & \frac{a}{c} \\[4pt]
-            -c & -c\sin(\beta + \delta_2) & c\sin(\beta - \delta_3) & c
-          \end{pmatrix}
-          }_{\boldsymbol{C}}
-          \begin{pmatrix} F_1 \\ F_2 \\ F_3 \\ F_4 \end{pmatrix}
-          =
-          \begin{pmatrix} F_x^c \\ F_y^c \\ T^c \end{pmatrix}
-        </div>
+        <h3>基本力平衡方程</h3>
+        <p>根据力的分解和力矩平衡：</p>
+        $$
+        \underbrace{
+        \begin{pmatrix}
+          \frac{b}{c} & \cos\delta_2 & \cos\delta_3 & \frac{b}{c} \\[4pt]
+          -\frac{a}{c} & \sin\delta_2 & \sin\delta_3 & \frac{a}{c} \\[4pt]
+          -c & -c\sin(\beta + \delta_2) & c\sin(\beta - \delta_3) & c
+        \end{pmatrix}
+        }_{\boldsymbol{C}}
+        \begin{pmatrix} F_1 \\ F_2 \\ F_3 \\ F_4 \end{pmatrix}
+        =
+        \begin{pmatrix} F_x^c \\ F_y^c \\ T^c \end{pmatrix}
+        $$
         <p>将此方程记为 $\boldsymbol{C}\boldsymbol{x} = \boldsymbol{y}$。</p>
 
-        <h3>5.2 系数矩阵的性质</h3>
+        <h3>系数矩阵的性质</h3>
         <p>
-          $\boldsymbol{C}$ 是一个 $3 \times 4$ 矩阵，因此 $\operatorname{rank}(\boldsymbol{C}) \le 3$。
-          从物理意义出发可以确信三个方程是独立的（这在数学上也可严格证明），故 $\operatorname{rank}(\boldsymbol{C}) = 3$，
-          $\boldsymbol{C}$ 是行满秩矩阵。由秩-零化度定理，$\dim\operatorname{Ker}(\boldsymbol{C}) = 1$。
-        </p>
-        <p>这意味着方程的解空间是 $\mathbb{R}^4$ 中的一条直线——有无穷多解，
-          我们需要在这条直线上选择一个"好"的点。</p>
-
-        <h3>5.3 Moore-Penrose 广义逆与最小范数解</h3>
-        <p>由于 $\boldsymbol{C}$ 行满秩，其 Moore-Penrose 广义逆有一个简洁的右逆表达式：</p>
-        <div class="math-block">
-          \boldsymbol{C}^+ = \boldsymbol{C}^\mathsf{H} (\boldsymbol{C} \boldsymbol{C}^\mathsf{H})^{-1}
-        </div>
-        <p>
-          这里涉及的所有矩阵规模都非常小（$3\times 3$ 的求逆），在单片机上完全可以实时完成。
-          使用 $\boldsymbol{C}^+$ 可以获得方程的最小范数解，即 $\boldsymbol{x}_{\text{pre}} = \boldsymbol{C}^+ \boldsymbol{y}$。
-          最小范数解的物理意义是在满足力和力矩需求的前提下，让四个电机的出力尽可能"均匀"，
-          避免电机之间无谓地相互对抗。
+          $\boldsymbol{C}$ 是一个 $3 \times 4$ 矩阵，因此 $\operatorname{rank}(\boldsymbol{C}) \le 3$。从物理意义出发可以确信三个方程是独立的（数学上也可严格证明），故 $\operatorname{rank}(\boldsymbol{C}) = 3$，$\boldsymbol{C}$ 行满秩。由秩-零化度定理，$\dim\operatorname{Ker}(\boldsymbol{C}) = 1$——解空间是 $\mathbb{R}^4$ 中的一条直线。
         </p>
 
-        <h2>6. 力分配优化：处理打滑</h2>
+        <h3>Moore-Penrose 广义逆与最小范数解</h3>
+        <p>由于 $\boldsymbol{C}$ 行满秩，其 Moore-Penrose 广义逆有简洁的右逆表达式：</p>
+        $$
+        \boldsymbol{C}^+ = \boldsymbol{C}^\mathsf{H} (\boldsymbol{C} \boldsymbol{C}^\mathsf{H})^{-1}
+        $$
         <p>
-          以 $\boldsymbol{x}_{\text{pre}}$ 为基础的力分配在大多数情况下工作正常，但仍存在两类需要处理的问题。
-          优化的核心工具是 $\operatorname{Ker}(\boldsymbol{C})$——因为 $\dim\operatorname{Ker}(\boldsymbol{C}) = 1$，
-          我们只需一个非零向量就可以沿解空间直线进行调节。
+          这里涉及的所有矩阵规模都非常小（$3\times 3$ 的求逆），在单片机上完全可以实时完成。使用 $\boldsymbol{C}^+$ 获得方程的最小范数解：$\boldsymbol{x}_{\text{pre}} = \boldsymbol{C}^+ \boldsymbol{y}$。最小范数解的物理意义是在满足力和力矩需求的前提下，让四个电机出力尽可能均匀，避免电机之间无谓地相互对抗。
         </p>
 
-        <h3>6.1 "正常"打滑：上坡时的动力分配</h3>
+        <h2>6. 力分配优化：重心偏移、轮速反馈与三分法寻优</h2>
         <p>
-          底盘上坡时，位置低的轮子受到更大的正压力（从而能提供更大的摩擦力），
-          而位置高的轮子更容易打滑。在半舵半全向底盘上，前进上坡表现为前侧的全向轮打滑，后侧的舵轮转不动。
+          初步的最小范数解 $\boldsymbol{x}_{\text{pre}}$ 在简单场景下工作良好，但它没有考虑底盘在实际运动中各个轮子<em>能提供的最大摩擦力并不相等</em>这一事实。优化的核心思路是：先通过物理模型计算出各轮正压力的比例——这决定了它们能承受的最大摩擦力的比例——再结合轮速反馈进行微调，最后用三分法在 $\operatorname{Ker}(\boldsymbol{C})$ 张成的直线上寻找最接近目标比例的力分配。
         </p>
-        <p>处理方法是：</p>
+
+        <h3>6.1 重心偏移与正压力估计</h3>
+        <p>
+          由于云台、弹药箱等设备的安装，底盘的等效质心通常不在几何中心，且距离地面有一定高度 $h$。当底盘加速、减速或转向时，惯性力会产生附加力矩，改变四个轮子的正压力分布。
+        </p>
+        <p>记四个轮子所受地面的正压力为 $F_1', F_2', F_3', F_4'$（注意：这是正压力，不是轮子提供的驱动力）。通过加速度计获得底盘加速度 $(a_x, a_y, a_z)$，从受力与力矩平衡出发：</p>
+        <ul>
+          <li><strong>$z$ 方向受力平衡：</strong>$F_1' + F_2' + F_3' + F_4' = m a_z$</li>
+          <li><strong>绕 $y$ 轴的力矩平衡：</strong>惯性力 $-m a_x$ 作用于高度 $h$ 处产生力矩 $-m a_x h$，这个力矩由正压力的不对称来抵消：$-m a_x h + F_1' c + F_2' c - F_3' c - F_4' c = 0$</li>
+          <li><strong>绕 $x$ 轴的力矩平衡：</strong>同理，$m a_y h + F_1' c - F_2' c - F_3' c + F_4' c = 0$</li>
+        </ul>
+        <p>
+          以上 3 个方程不足以唯一确定四个未知正压力。为此引入<strong>刚性平面假设</strong>：底盘是刚体，四个轮子接触在同一平面上，对角方向的正压力之和相等：
+        </p>
+        $$
+        F_1' + F_3' = F_2' + F_4'
+        $$
+        <p>至此得到完整的线性方程组：</p>
+        $$
+        \begin{pmatrix}
+          1 & 1 & 1 & 1 \\
+          c & c & -c & -c \\
+          c & -c & -c & c \\
+          1 & -1 & 1 & -1
+        \end{pmatrix}
+        \begin{pmatrix} F_1' \\ F_2' \\ F_3' \\ F_4' \end{pmatrix}
+        =
+        \begin{pmatrix} m a_z \\ m a_x h \\ -m a_y h \\ 0 \end{pmatrix}
+        $$
+        <p>系数矩阵满秩，可直接求逆得到解析解：</p>
+        $$
+        \begin{pmatrix} F_1' \\ F_2' \\ F_3' \\ F_4' \end{pmatrix}
+        =
+        \frac{m}{4c}
+        \begin{pmatrix}
+          a_z c + a_x h - a_y h \\
+          a_z c + a_x h + a_y h \\
+          a_z c - a_x h + a_y h \\
+          a_z c - a_x h - a_y h
+        \end{pmatrix}
+        $$
+        <p>
+          这个结果直观地反映了物理规律：加速时（$a_x > 0$），后侧舵轮（$F_2', F_3'$）的正压力增大，前侧全向轮（$F_1', F_4'$）的正压力减小——这正是上坡时前轮容易打滑的根本原因。侧向加速（$a_y \neq 0$）会导致左右两侧的正压力不对称。
+        </p>
+
+        <h3>6.2 构建目标力比例</h3>
+        <p>
+          我们关心的是各轮正压力的<em>比例</em>而非绝对值。将上述解析解归一化，得到一个四维向量 $\boldsymbol{p} = (p_1, p_2, p_3, p_4)$，其中 $p_i \propto F_i'$ 且 $\sum p_i = 1$。这个向量的物理含义是：在当前的底盘运动状态下，四个轮子各自能承受的最大摩擦力的<em>理想</em>比例。
+        </p>
+        <p>
+          设 $\operatorname{Ker}(\boldsymbol{C})$ 中的非零单位向量为 $\boldsymbol{k}$（通过高斯消元获得，并使第一分量为正）。我们想要在直线 $\{ \boldsymbol{x}_{\text{pre}} + \lambda \boldsymbol{k} \mid \lambda \in \mathbb{R} \}$ 上选取一个点，使得这个点的各分量比例尽可能接近 $\boldsymbol{p}$。衡量"接近程度"的指标是余弦相似度：
+        </p>
+        $$
+        \cos\theta(\lambda) = \frac{\boldsymbol{p} \cdot (\boldsymbol{x}_{\text{pre}} + \lambda \boldsymbol{k})}{\|\boldsymbol{x}_{\text{pre}} + \lambda \boldsymbol{k}\|}
+        $$
+
+        <h3>6.3 轮速反馈调整目标比例</h3>
+        <p>
+          上述正压力估计给出的是<em>静态</em>比例——它没有考虑轮子实际与地面的接触状态。在实践中，我们需要根据轮子的实际转速对目标比例进行动态调整：
+        </p>
+        <ul>
+          <li>计算每个轮子的实测转速与期望转速（由正向运动学解算得出）的比值；</li>
+          <li>如果某一轮子的实测转速<em>明显快于</em>期望转速，说明该轮子正在打滑，地面摩擦力不足以提供其对应的目标力；此时应<em>衰减</em>该轮子在 $\boldsymbol{p}$ 中的对应分量；</li>
+          <li>当该轮子的转速回归正常后，其分量<em>逐渐恢复</em>到原始值。</li>
+        </ul>
+        <p>
+          换句话说，正压力估计提供了初始的 $\boldsymbol{p}$，而轮速反馈负责对这个 $\boldsymbol{p}$ 进行持续的在线修正。修正后的目标比例向量记为 $\tilde{\boldsymbol{p}}$。
+        </p>
+
+        <h3>6.4 三分法寻优</h3>
+        <p>
+          现在问题转化为：在 $\lambda$ 的合理范围（比如 $[-1000, 1000]$）内，寻找使 $\cos\theta(\lambda)$ 最大化的 $\lambda$。由于余弦函数沿直线方向是单峰的（在合理范围内只有一个极大值），可以使用<strong>三分法</strong>高效求解：
+        </p>
         <ol>
-          <li>通过高斯消元求解 $\operatorname{Ker}(\boldsymbol{C})$ 中的一个非零向量，将其单位化并使第一分量为正，记为 $\boldsymbol{k}$。</li>
-          <li>计算每个轮子实测速度与期望速度的比值，找到转速相对最低的轮子（认为它最需要更大的力矩）。</li>
-          <li>维护一个系数 $\mathrm{cof}$（初值为 $0$），根据轮子需求调整其值。</li>
-          <li>如果相邻两个时钟周期的 $\boldsymbol{k}$ 方向变化过大（内积的余弦值过小），将 $\mathrm{cof}$ 重置为零。</li>
-          <li>调整后的力分配为 $\boldsymbol{x} = \boldsymbol{x}_{\text{pre}} + \mathrm{cof} \cdot \|\boldsymbol{x}_{\text{pre}}\| \cdot \boldsymbol{k}$，
-            同时确保 $\boldsymbol{x}$ 与 $\boldsymbol{x}_{\text{pre}}$ 每个分量的正负号保持一致。</li>
+          <li>设搜索区间 $[l, r]$，容差 $\varepsilon = 0.05$；</li>
+          <li>取两个三分点 $m_1 = (2l + r)/3$ 和 $m_2 = (l + 2r)/3$；</li>
+          <li>计算 $\cos\theta(m_1)$ 和 $\cos\theta(m_2)$；注意计算时需要统一正负号——若 $\boldsymbol{x}_{\text{pre}}$ 的某一分量为负，则 $\tilde{\boldsymbol{p}}$ 的对应分量也取反，以确保目标与解的方向一致性；</li>
+          <li>如果 $\cos\theta(m_1) < \cos\theta(m_2)$，则收缩到 $[m_1, r]$；否则收缩到 $[l, m_2]$；</li>
+          <li>反复迭代直至 $r - l < \varepsilon$。</li>
         </ol>
+        <p>最终得到的 $\lambda^*$ 给出优化后的力分配：</p>
+        $$
+        \boldsymbol{x} = \boldsymbol{x}_{\text{pre}} + \lambda^* \boldsymbol{k}
+        $$
 
-        <h3>6.2 "不正常"打滑：轮子悬空</h3>
+        <h3>6.5 轮子悬空处理</h3>
         <p>
-          当某一轮子悬空时，其转速会远大于其他轮子（因为失去地面摩擦力后电机空转）。
-          此时只需将该轮子的力矩置零，直到其转速回归合理范围后再恢复输出。
-        </p>
-
-        <h2>7. 重心偏移与力矩分配</h2>
-        <p>
-          前面的力分配模型中隐含了一个简化假设：底盘的质心位于几何中心。
-          然而在实际中，由于云台、弹药箱等设备的安装位置，质心往往偏离几何中心，
-          并且距离地面有一定高度 $h$。这意味着底盘的加速运动会引起额外的俯仰/侧倾力矩，
-          从而改变四个轮子的正压力分布——进而影响每个轮子能提供的最大摩擦力。
+          当某一轮子完全悬空时，其转速会远大于其他轮子（电机空转）。此时不需要复杂的比例调整——直接将悬空轮的力矩置零，待其转速回归合理范围后再恢复输出即可。这是对整个优化框架的一个安全性补充。
         </p>
 
-        <h3>7.1 刚性平面假设与正压力方程</h3>
-        <p>
-          记四个轮子所受地面的正压力为 $F_1', F_2', F_3', F_4'$。
-          通过加速度计获得底盘加速度 $(a_x, a_y, a_z)$。从受力平衡出发：
-        </p>
-        <ul>
-          <li><strong>垂直方向（$z$）受力平衡：</strong>$F_1' + F_2' + F_3' + F_4' = m a_z$</li>
-          <li><strong>绕 $x$ 轴的力矩平衡：</strong>摩擦力在 $z$ 方向产生力矩，需由正压力抵消。具体有：
-            $f_2 h - f_4 h - F_1' c + F_3' c = 0$</li>
-          <li><strong>绕 $y$ 轴的力矩平衡：</strong>类似地，$f_1 h - f_3 h + F_2' c - F_4' c = 0$</li>
-        </ul>
-        <p>
-          利用惯性力 $-m a_x$ 和 $-m a_y$ 分别代替摩擦力在对应方向上的合力，
-          并注意到每个轮子的摩擦力和其所受正压力成正比（即 $f_i \propto F_i'$），
-          可以化简力矩方程。最终得到：
-        </p>
-        <ul>
-          <li>$-m a_x h + F_1' c + F_2' c - F_3' c - F_4' c = 0$（绕 $y$ 轴）</li>
-          <li>$m a_y h + F_1' c - F_2' c - F_3' c + F_4' c = 0$（绕 $x$ 轴）</li>
-        </ul>
-
-        <h3>7.2 补充约束与求解</h3>
-        <p>
-          以上 3 个方程（$z$ 方向受力 + 两个力矩平衡）仍不足以唯一确定四个正压力。为此引入<strong>刚性平面假设</strong>：
-          底盘是刚体，四个轮子接触在同一平面上，对角方向的正压力之和相等，即：
-        </p>
-        <div class="math-block">
-          F_1' + F_3' = F_2' + F_4'
-        </div>
-        <p>于是得到完整的线性方程组：</p>
-        <div class="math-block">
-          \begin{pmatrix}
-            1 & 1 & 1 & 1 \\
-            c & c & -c & -c \\
-            c & -c & -c & c \\
-            1 & -1 & 1 & -1
-          \end{pmatrix}
-          \begin{pmatrix} F_1' \\ F_2' \\ F_3' \\ F_4' \end{pmatrix}
-          =
-          \begin{pmatrix} m a_z \\ m a_x h \\ -m a_y h \\ 0 \end{pmatrix}
-        </div>
-        <p>该系数矩阵满秩，可直接求逆得到解析解：</p>
-        <div class="math-block">
-          \begin{pmatrix} F_1' \\ F_2' \\ F_3' \\ F_4' \end{pmatrix}
-          =
-          \frac{m}{4c}
-          \begin{pmatrix}
-            a_z c + a_x h - a_y h \\
-            a_z c + a_x h + a_y h \\
-            a_z c - a_x h + a_y h \\
-            a_z c - a_x h - a_y h
-          \end{pmatrix}
-        </div>
-        <p>
-          这个结果告诉我们：当底盘加速或减速时，四个轮子的正压力不再相等。
-          加速时（$a_x > 0$），后侧舵轮（$F_2, F_3$）的正压力增大，前侧全向轮（$F_1, F_4$）的正压力减小——
-          这正是上坡时前轮容易打滑的根本原因。同理，侧向加速（$a_y \neq 0$）会导致左右两侧的正压力不对称。
-        </p>
-
-        <h3>7.3 在力分配中的应用</h3>
-        <p>
-          在实践中，我们更关心的是各轮正压力的<em>比例</em>而非绝对值。
-          上述结果可作为各轮最大出力上限的参考依据——正压力越大的轮子，可以分配给它更大的目标力。
-          这为第 6 节中的 $\mathrm{cof}$ 调整方向提供了物理意义上的指导：
-          正压力较大的轮子应当是 $\mathrm{cof}$ 调整受益的一方。
-        </p>
-
-        <h2>8. 功率控制</h2>
+        <h2>7. 功率控制</h2>
         <p>功率控制是整个力控流程的最后一步。其目标是在裁判系统给定的功率限制下，尽可能保持力分配的比例不变。</p>
 
-        <h3>8.1 电机功率模型</h3>
+        <h3>电机功率模型</h3>
         <p>对单个电机，建立如下功率模型：</p>
-        <div class="math-block">
-          P = k_1 \omega^2 + k_2 I^2 + k_3 I\omega + k_4 |\omega|
-        </div>
+        $$
+        P = k_1 \omega^2 + k_2 I^2 + k_3 I\omega + k_4 |\omega|
+        $$
         <p>
-          其中 $\omega$ 为电机转速（经减速比换算），$I$ 为电流。$k_1$ 项对应机械损耗（与转速平方成正比），
-          $k_2$ 项对应铜损（与电流平方成正比），$k_3$ 项对应电磁功率（电流与转速的乘积），
-          $k_4$ 项对应与转速线性相关的杂散损耗。各系数可通过采集实验数据后使用最小二乘拟合获得。
+          其中 $\omega$ 为电机转速（经减速比换算），$I$ 为电流。$k_1 \omega^2$ 对应机械损耗，$k_2 I^2$ 对应铜损（焦耳热），$k_3 I \omega$ 对应电磁功率，$k_4 |\omega|$ 对应与转速线性相关的杂散损耗。各系数可通过采集实验数据后使用最小二乘拟合获得。
         </p>
 
-        <h3>8.2 功率分配策略</h3>
-        <p>我们的功率控制遵循两级策略：</p>
+        <h3>功率分配策略</h3>
+        <p>功率控制遵循两级策略：</p>
         <ol>
-          <li><strong>舵向电机优先：</strong>先估算两个舵向电机（6020）的功率。
-          若总功率超出舵向电机的分项限制，则计算功率因子，通过求解二次方程确定每个舵向电机的电流缩放。</li>
-          <li><strong>轮向电机分配：</strong>将剩余可用功率分配给四个轮向电机（M3508）。
-          若总估算功率超出可用功率，需要为<em>所有</em>轮向电机的电流乘上同一个因子，
-          以保证力分配的比例不变。</li>
+          <li><strong>舵向电机优先：</strong>先估算两个舵向电机（6020）的功率。若超出舵向电机的分项限制，则计算功率因子，通过求解二次方程确定每个舵向电机的电流缩放。</li>
+          <li><strong>轮向电机分配：</strong>将剩余可用功率分配给四个轮向电机（M3508）。若总估算功率超出可用功率，为<em>所有</em>轮向电机的电流乘上同一个因子，以保证力分配的比例不变。</li>
         </ol>
 
-        <h3>8.3 保持力比例的关键性</h3>
+        <h3>保持力比例的关键性</h3>
         <p>
-          这里有一个关键的工程细节：当功率不足时，应当等比例缩放<em>电流（即力矩）</em>，而非等比例缩放<em>功率</em>。
-          如果等比例缩放各电机的功率，由于功率与电流的关系非线性（$I^2$ 项的存在），
-          会导致各轮力矩的比例发生改变，从而改变合力的方向——这对于底盘控制来说是灾难性的。
-          反之，等比例缩放电流可以精确地保持各轮出力之间的比例关系，合力的方向不变，仅大小被缩减。
+          这里有一个关键的工程细节：当功率不足时，应当等比例缩放<em>电流（即力矩）</em>，而非等比例缩放<em>功率</em>。如果等比例缩放各电机的功率，由于功率与电流的非线性关系（$I^2$ 项的存在），会导致各轮力矩的比例发生改变，从而改变合力的方向——这对底盘控制来说是灾难性的。等比例缩放电流则能精确保持各轮出力之间的比例关系。
         </p>
         <p>
-          从数学上看，求解等比例电流缩放因子归结为解一个二次方程 $a \lambda^2 + b \lambda + c = 0$，
-          其中 $a$ 综合了各电机功率模型中的 $k_2 I^2$ 项，$b$ 综合了 $k_3 I\omega$ 项，
-          $c$ 综合了 $k_1\omega^2 + k_4|\omega|$ 项与目标功率的差值。
-          出于物理原因（功率随电流单调递增），该方程在 $[0, 1]$ 内必有唯一实根。
+          从数学上看，求解等比例电流缩放因子 $\lambda$ 归结为解一个二次方程 $a \lambda^2 + b \lambda + c = 0$：$a$ 综合了各电机功率模型中的 $k_2 I^2$ 项，$b$ 综合了 $k_3 I \omega$ 项，$c$ 综合了 $k_1 \omega^2 + k_4 |\omega|$ 项与目标功率的差值。出于物理原因（功率随电流单调递增），该方程在 $[0, 1]$ 内必有唯一实根。
         </p>
 
-        <h3>8.4 电流上限</h3>
+        <h3>电流上限</h3>
         <p>
-          在将最终结果写入电机控制器之前，还需检查是否超出电机的电流上限
-          （对于 M3508 而言为 20A）。若任一电机电流超限，
-          同样对所有轮向电机乘以同一缩放因子，以确保电流不超限的同时保持力方向不变。
+          在将最终结果写入电机控制器之前，还需检查是否超出电机的电流上限（对于 M3508 而言为 20A）。若任一电机电流超限，同样对所有轮向电机乘以同一缩放因子，确保电流不超限的同时保持力方向不变。
         </p>
 
-        <h2>9. 总结</h2>
-        <p>
-          本文系统地梳理了半舵半全向底盘控制的核心技术链路：
-        </p>
+        <h2>8. 总结</h2>
+        <p>本文系统地梳理了半舵半全向底盘控制的核心技术链路：</p>
         <ul>
           <li><strong>速度正解算</strong>将舵向与力分配解耦，把一个非线性问题转化为两个独立的线性问题；</li>
           <li><strong>卡尔曼滤波</strong>提供了平滑且鲁棒的速度观测；</li>
           <li><strong>Moore-Penrose 广义逆</strong>给出了力分配的最小范数基准解；</li>
-          <li><strong>零空间调整</strong>利用解空间的自由度优化了打滑情况下的力分配；</li>
-          <li><strong>重心偏移补偿</strong>通过刚性平面假设和力矩平衡，给出了各轮正压力的比例参考；</li>
+          <li><strong>重心偏移 + 轮速反馈 + 三分法</strong>构成了完整的力分配优化框架：正压力估计给出目标比例的物理基础，轮速反馈进行在线修正，三分法在零空间中搜索最优解；</li>
           <li><strong>功率控制</strong>通过等比例缩放电流，在功率受限时保持了力方向不变。</li>
         </ul>
         <p>
-          贯穿整个设计的一个核心思想是<em>保持力的比例关系</em>——无论是在功率控制中缩放电流而非功率，
-          还是在力分配优化中注意 $\boldsymbol{x}$ 和 $\boldsymbol{x}_{\text{pre}}$ 分量正负号的一致性，
-          都是为了保证合力方向的正确性。在实际比赛中，这比追求某个轮子的最优出力更为重要。
+          贯穿整个设计的一个核心思想是<em>保持力的比例关系</em>——无论是在功率控制中缩放电流而非功率，还是在三分法寻优中使用余弦相似度作为目标函数，都是为了保证合力方向的正确性。在实际比赛中，这比追求某个轮子的最优出力更为重要。
         </p>
 
       </div>

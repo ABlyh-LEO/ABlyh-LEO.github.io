@@ -9,8 +9,8 @@
 :root {
   --color-primary: #0f2b46;
   --color-primary-light: #1a4a7a;
-  --color-accent: #b8860b;
-  --color-accent-light: #d4a843;
+  --color-accent: #2563eb;
+  --color-accent-light: #93c5fd;
   --color-bg: #fafaf8;
   --color-bg-alt: #f3f1ec;
   --color-surface: #ffffff;
@@ -318,22 +318,17 @@ h1, h2, h3, h4 {
   justify-content: center;
 }
 
-.hero-avatar-placeholder {
-  width: 260px;
-  height: 260px;
+.hero-avatar {
+  width: 220px;
+  height: 220px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--color-primary-light), var(--color-primary));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-heading);
-  font-size: 5rem;
-  color: rgba(255,255,255,0.85);
+  object-fit: cover;
   box-shadow: var(--shadow-xl);
   position: relative;
+  border: 3px solid var(--color-surface);
 }
 
-.hero-avatar-placeholder::after {
+.hero-avatar::after {
   content: '';
   position: absolute;
   inset: -8px;
@@ -1098,10 +1093,9 @@ h1, h2, h3, h4 {
 
   .hero-visual { order: -1; }
 
-  .hero-avatar-placeholder {
-    width: 180px;
-    height: 180px;
-    font-size: 3.5rem;
+  .hero-avatar {
+    width: 160px;
+    height: 160px;
   }
 
   .hero-deco-ring:nth-child(2) { width: 240px; height: 240px; }
