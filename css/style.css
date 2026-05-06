@@ -1004,6 +1004,87 @@ h1, h2, h3, h4 {
   border-top: 1px solid var(--color-border);
 }
 
+/* --- Homepage Skills Tags (large) --- */
+.skills-tags-hero {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+}
+
+.skill-tag-lg {
+  display: inline-block;
+  padding: 0.5rem 1.3rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 50px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--color-primary);
+  transition: all 0.25s;
+}
+
+.skill-tag-lg:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- Hero Action Buttons --- */
+.hero-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+/* --- Nav Resume Button --- */
+.nav-resume-btn {
+  padding: 0.45rem 1.2rem;
+  border: 1.5px solid var(--color-accent);
+  border-radius: 50px;
+  font-weight: 600 !important;
+  color: var(--color-accent) !important;
+  transition: all 0.25s !important;
+}
+
+.nav-resume-btn:hover {
+  background: var(--color-accent);
+  color: #fff !important;
+}
+
+.nav-resume-btn::after { display: none !important; }
+
+/* --- Resume Page Top Spacing --- */
+.resume-page {
+  padding-top: calc(var(--nav-height) + 3rem);
+}
+
+/* --- GPA Big Number --- */
+.gpa-big {
+  font-family: var(--font-heading);
+  font-size: 2.4rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  line-height: 1;
+}
+
+/* --- Education Card year inline --- */
+.edu-card .edu-main .years-inline {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+/* --- Hero Actions Responsive --- */
+@media (max-width: 1024px) {
+  .hero-actions { justify-content: center; }
+}
+
+@media (max-width: 480px) {
+  .hero-actions { flex-direction: column; align-items: center; }
+}
+
 /* --- Responsive --- */
 @media (max-width: 1024px) {
   .hero-inner {
