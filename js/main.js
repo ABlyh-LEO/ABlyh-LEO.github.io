@@ -11,11 +11,11 @@
   // ============================================================
   const blogPosts = [
     {
-      title: 'Getting Started with Embedded Systems — My RoboMaster Journey',
+      title: '半舵半全向底盘控制：从速度解算到力矩分配的系统性思路',
       date: '2025-01-15',
-      excerpt: 'From algorithmic problem solving to embedded development: how joining the RoboMaster team transformed my understanding of software and hardware integration.',
-      url: 'posts/hello-world.html',
-      tags: ['Embedded', 'STM32']
+      excerpt: '系统地梳理半舵半全向底盘的核心控制链路：速度正解算、卡尔曼滤波逆向观测、Moore-Penrose广义逆力分配、零空间打滑补偿、重心偏移力矩平衡与功率控制。',
+      url: 'posts/chassis-control.html',
+      tags: ['RoboMaster', '嵌入式', '控制']
     }
   ];
 
