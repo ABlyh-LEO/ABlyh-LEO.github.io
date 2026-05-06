@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Getting started with embedded systems development — first experiences with STM32 and the RoboMaster sentinel robot.">
+  <title>Getting Started with Embedded Systems — Yanhong Liu's Blog</title>
+  <link rel="stylesheet" href="../../css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
+</head>
+<body>
+
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="../../" class="nav-logo">YL</a>
+      <div class="nav-links" id="navLinks">
+        <a href="../../#about">About</a>
+        <a href="../../#education">Education</a>
+        <a href="../../#experience">Experience</a>
+        <a href="../../#awards">Awards</a>
+        <a href="../../#skills">Skills</a>
+        <a href="../" class="nav-blog-btn">Blog</a>
+      </div>
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <div class="blog-post-inner">
+      <header class="blog-post-header">
+        <h1>Getting Started with Embedded Systems — My RoboMaster Journey</h1>
+        <div class="blog-post-meta">
+          <span>2025-01-15</span>
+          <span>Embedded · STM32</span>
+        </div>
+      </header>
+
+      <div class="blog-post-body">
+        <p>
+          When I first joined the RoboMaster team at USTC, I had no idea how much I would learn in just one year.
+          This post is a reflection on my journey from a beginner to leading the embedded development of the sentinel robot.
+        </p>
+
+        <h2>Why Embedded Systems?</h2>
+        <p>
+          Coming from a mathematics-oriented background (Information &amp; Computational Science), my initial exposure to programming was
+          mostly algorithmic — C++ for ICPC contests, data structures, and problem solving. Embedded systems felt like a completely
+          different world: hardware, real-time constraints, communication protocols, and physical robots that could actually move.
+        </p>
+        <p>
+          The transition wasn't easy. Reading vendor datasheets is nothing like reading algorithm tutorials. But the first time
+          I saw a motor spin because of code I wrote, I was hooked.
+        </p>
+
+        <h2>The Sentinel Robot</h2>
+        <p>
+          The sentinel robot in RoboMaster is a fully autonomous defense unit. It sits on a rail, scans for enemy robots,
+          and automatically engages targets. My responsibilities included:
+        </p>
+        <ul>
+          <li><strong>Chassis control:</strong> Designing control algorithms for a special-configuration chassis that moves along a rail system</li>
+          <li><strong>Gimbal stabilization:</strong> Keeping the gimbal steady while the chassis moves, using PID control and sensor fusion</li>
+          <li><strong>Communication:</strong> Implementing CAN FD, UART, and USB virtual serial port communication between modules</li>
+          <li><strong>System integration:</strong> Coordinating with the vision team and making sure all subsystems work together</li>
+        </ul>
+
+        <h2>Key Lessons Learned</h2>
+
+        <h3>1. Read the Datasheet</h3>
+        <p>
+          There is no substitute for reading the manufacturer's documentation. The STM32H7 reference manual is over 3,000 pages long.
+          You don't need to read all of it, but knowing where to find the right information is a skill in itself.
+        </p>
+
+        <h3>2. C++ in Embedded is Different</h3>
+        <p>
+          C++ on a microcontroller is not the same as C++ on a PC. Memory is limited, dynamic allocation is risky,
+          and you need to think about interrupt safety. Templates and classes are useful, but you must understand
+          what the compiler generates.
+        </p>
+
+        <h3>3. Communication is Everything</h3>
+        <p>
+          A robot is a distributed system. The chassis controller, gimbal controller, vision module, and referee system
+          all need to talk to each other. Getting the communication protocols right — timing, error handling, bandwidth —
+          is critical for reliability.
+        </p>
+
+        <h3>4. Debugging Hardware is Hard</h3>
+        <p>
+          When your code crashes on a PC, you get a stack trace. When it crashes on a microcontroller, the robot might
+          just stop moving — or worse, start moving in the wrong direction. Logic analyzers, oscilloscopes, and
+          serial logging become your best friends.
+        </p>
+
+        <h2>Looking Forward</h2>
+        <p>
+          The RoboMaster experience taught me far more than just embedded programming. It taught me how to work in a
+          multidisciplinary team, how to manage a complex project over months, and how to stay calm when things break
+          right before a competition. These are skills I will carry with me wherever I go next.
+        </p>
+        <p>
+          If you're thinking about getting into embedded systems, my advice is simple: find a project, get a development
+          board, and start building. The STM32 ecosystem has excellent documentation and a supportive community.
+          You'll be surprised by how much you can learn in a short time.
+        </p>
+      </div>
+
+      <div class="blog-post-back">
+        <a href="../" class="btn btn-outline">← Back to Blog</a>
+      </div>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-name">Yanhong Liu</div>
+      <div class="footer-links">
+        <a href="../../">Home</a>
+        <a href="../">Blog</a>
+        <a href="mailto:lyh@mail.ustc.edu.cn">Email</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      &copy; 2025 Yanhong Liu. Built with care.
+    </div>
+  </footer>
+
+  <script src="../../js/main.js"></script>
+</body>
+</html>

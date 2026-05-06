@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Yanhong Liu's Blog — thoughts, notes, and learning records.">
+  <title>Blog — Yanhong Liu</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
+</head>
+<body>
+
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a href="../" class="nav-logo">YL</a>
+      <div class="nav-links" id="navLinks">
+        <a href="../#about">About</a>
+        <a href="../#education">Education</a>
+        <a href="../#experience">Experience</a>
+        <a href="../#awards">Awards</a>
+        <a href="../#skills">Skills</a>
+        <a href="index.html" class="nav-blog-btn active">Blog</a>
+      </div>
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <section class="section blog-page">
+    <div class="section-inner">
+      <div class="section-header">
+        <span class="section-label">Blog</span>
+        <h2 class="section-title">All Posts</h2>
+        <p class="section-subtitle">Thoughts on programming, embedded systems, competitions, and beyond.</p>
+      </div>
+
+      <div class="blog-list" id="blogList">
+        <!-- Populated by JS -->
+      </div>
+
+      <div id="blogEmpty" style="display:none; text-align:center; padding:3rem 0;">
+        <p style="color:var(--color-text-muted); font-size:1.1rem;">No posts yet — check back soon.</p>
+        <a href="../" class="btn btn-outline" style="margin-top:1.5rem;">← Back to Home</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-name">Yanhong Liu</div>
+      <div class="footer-links">
+        <a href="../">Home</a>
+        <a href="index.html">Blog</a>
+        <a href="mailto:lyh@mail.ustc.edu.cn">Email</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      &copy; 2025 Yanhong Liu. Built with care.
+    </div>
+  </footer>
+
+  <script src="../js/main.js"></script>
+</body>
+</html>
