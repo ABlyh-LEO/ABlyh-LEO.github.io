@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="系统地梳理半舵半全向底盘的核心控制链路：速度正解算、卡尔曼滤波、Moore-Penrose广义逆力分配、重心偏移正压力估计、转速反馈比例调整与三分法寻优、功率控制。">
-  <title>半舵半全向底盘控制：从速度解算到力矩分配的系统性思路 — Yanhong Liu's Blog</title>
+  <meta name="description" content="A systematic treatment of the semi-steering, semi-omni chassis control system — forward kinematics, Kalman-filter velocity observation, Moore-Penrose pseudoinverse force distribution, center-of-gravity normal-force estimation, wheel-speed feedback ratio adjustment, ternary search optimization, and power control.">
+  <title>Semi-Steering Semi-Omni Chassis Control: From Velocity Decomposition to Torque Distribution — Yanhong Liu's Blog</title>
   <link rel="stylesheet" href="../../css/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
   <script>
@@ -26,7 +26,8 @@
       <div class="nav-links" id="navLinks">
         <a href="../../">Home</a>
         <a href="../../resume/">Resume</a>
-        <a href="../" class="nav-blog-btn">Blog</a>
+        <a href="../../links/">Links</a>
+        <a href="../">Blog</a>
       </div>
       <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Menu">
         <span></span><span></span><span></span>
@@ -37,45 +38,45 @@
   <article class="blog-post">
     <div class="blog-post-inner">
       <header class="blog-post-header">
-        <h1>半舵半全向底盘控制：从速度解算到力矩分配的系统性思路</h1>
+        <h1>Semi-Steering Semi-Omni Chassis Control: From Velocity Decomposition to Torque Distribution</h1>
         <div class="blog-post-meta">
           <span>2025-01-15</span>
-          <span>RoboMaster · 嵌入式 · 控制</span>
+          <span>RoboMaster · Embedded · Control</span>
         </div>
       </header>
 
       <div class="blog-post-body">
 
-        <h2>1. 引言</h2>
+        <h2>1. Introduction</h2>
         <p>
-          在 RoboMaster 竞赛中，我们尝试了一种混合底盘构型：前侧为两个固定的全向轮，后侧为两个可独立转向的舵轮——即"半舵半全向"布局。这种构型兼顾了全向移动的灵活性与舵轮驱动的高扭矩优势，但给控制带来了不小的挑战：六个电机（两个舵向电机 + 四个轮向电机）需要协调工作以产生期望的底盘合力与合力矩，而控制方程却是欠定的。
+          During the 2025 season of the RoboMaster competition, we experimented with a hybrid chassis configuration: two fixed omni wheels at the front, and two independently steerable wheels at the rear — a "semi-steering, semi-omni" layout. This design combines the omnidirectional maneuverability of omni wheels with the high-torque advantage of steering wheels, but it introduces significant control challenges: six motors (two steering motors plus four wheel motors) must coordinate to produce the desired net force and torque on the chassis, while the governing equations are underdetermined.
         </p>
-        <p>本文系统地梳理该底盘从速度解算到力矩分配的完整控制流程，核心步骤为：</p>
+        <p>This article systematically lays out the complete control pipeline from velocity decomposition to torque distribution. The core steps are:</p>
         <ol>
-          <li>通过速度分解确定舵向电机的目标转角；</li>
-          <li>计算底盘的期望合力和合力矩；</li>
-          <li>利用 Moore-Penrose 广义逆进行初步力分配；</li>
-          <li>基于重心偏移估计正压力比例，结合轮速反馈调整目标比例，再利用三分法在零空间中寻找最优解；</li>
-          <li>进行功率限制与电流限幅。</li>
+          <li>Determine the target steering angles via velocity decomposition;</li>
+          <li>Compute the desired net force and torque on the chassis;</li>
+          <li>Obtain a preliminary force distribution using the Moore-Penrose pseudoinverse;</li>
+          <li>Estimate the normal-force ratio from the center-of-gravity offset, adjust target ratios with wheel-speed feedback, then use ternary search within the kernel space to find the optimal solution;</li>
+          <li>Apply power limiting and current capping.</li>
         </ol>
 
-        <h2>2. 坐标系与记号约定</h2>
+        <h2>2. Coordinate System and Notation</h2>
         <p>
-          我们规定：底盘安装有两个全向轮的一侧为前侧，对应 $+x$ 方向；底盘平面内与其正交的方向为 $+y$（向左）；利用右手系确定 $+z$ 向上（即安装云台的方向）。四个轮子分别位于底盘的四个象限，沿 $x$ 方向的轮距半长为 $a$，沿 $y$ 方向的轮距半长为 $b$，记 $c = \sqrt{a^2 + b^2}$，$\beta = \arccos(a/c)$。
+          We define the side with the two omni wheels as the front, corresponding to the $+x$ direction. Orthogonal to this in the chassis plane is the $+y$ direction (to the left); the right-hand rule gives $+z$ upward (the direction in which the gimbal is mounted). The four wheels are located in the four quadrants of the chassis. The half length along $x$ is $a$, the half length along $y$ is $b$, $c = \sqrt{a^2 + b^2}$, and $\beta = \arccos(a/c)$.
         </p>
-        <p>核心记号：</p>
+        <p>Key notation:</p>
         <ul>
-          <li>$F_x^c, F_y^c, T^c$ —— 底盘期望合力在 $+x$、$+y$ 方向的分量及绕 $+z$ 轴的合力矩；</li>
-          <li>$v_x^c, v_y^c, \omega^c$ —— 底盘中心在 $+x$、$+y$ 方向的速度及绕 $+z$ 轴的角速度；</li>
-          <li>$F_1, v_1$ —— 位于第一象限的全向轮提供的力与速度；</li>
-          <li>$F_2, \delta_2, v_2$ —— 位于第二象限的舵轮提供的力、舵向角及轮速；</li>
-          <li>$F_3, \delta_3, v_3$ —— 位于第三象限的舵轮提供的力、舵向角及轮速；</li>
-          <li>$F_4, v_4$ —— 位于第四象限的全向轮提供的力与速度。</li>
+          <li>$F_x^c, F_y^c, T^c$ — components of the desired net force on the chassis in the $+x$ and $+y$ directions, and the net torque about the $+z$ axis;</li>
+          <li>$v_x^c, v_y^c, \omega^c$ — velocity of the chassis center in $+x$ and $+y$, and angular velocity about $+z$;</li>
+          <li>$F_1, v_1$ — force and velocity of the omni wheel in the first quadrant;</li>
+          <li>$F_2, \delta_2, v_2$ — force, steering angle, and wheel speed of the steering wheel in the second quadrant;</li>
+          <li>$F_3, \delta_3, v_3$ — force, steering angle, and wheel speed of the steering wheel in the third quadrant;</li>
+          <li>$F_4, v_4$ — force and velocity of the omni wheel in the fourth quadrant.</li>
         </ul>
 
-        <h2>3. 正向运动学：速度解算</h2>
+        <h2>3. Forward Kinematics: Velocity Decomposition</h2>
         <p>
-          正向运动学的目的是从底盘中心的目标速度 $(v_x^c, v_y^c, \omega^c)$ 解算出每个轮子的期望速度以及舵轮的期望转角。由刚体运动学，每个轮子处的速度等于底盘中心的平动速度与绕中心转动的线速度之和，可得：
+          The purpose of forward kinematics is to compute, from the target chassis-center velocity $(v_x^c, v_y^c, \omega^c)$, the desired speed of each wheel and the desired steering angles. Using rigid-body kinematics, the velocity at each wheel is the sum of the translational velocity of the chassis center and the tangential velocity due to rotation:
         </p>
 
         $$
@@ -100,39 +101,39 @@
         \begin{pmatrix} v_x^c \\ v_y^c \\ \omega^c \end{pmatrix}
         $$
 
-        <p>将左侧矩阵记为 $\boldsymbol{A}$，右侧矩阵记为 $\boldsymbol{B}$。因为 $\boldsymbol{A}$ 结构非常简单，我们可以十分容易地利用其 Moore-Penrose 广义逆 $\boldsymbol{A}^+$ 求解：</p>
+        <p>Denote the left-hand matrix by $\boldsymbol{A}$ and the right-hand matrix by $\boldsymbol{B}$. Since $\boldsymbol{A}$ has a simple structure, its Moore-Penrose pseudoinverse $\boldsymbol{A}^+$ yields an easy solution:</p>
 
         $$
         \begin{pmatrix} v_1 \\ v_2 \\ v_3 \\ v_4 \end{pmatrix}
         = \boldsymbol{A}^+ \boldsymbol{B} \begin{pmatrix} v_x^c \\ v_y^c \\ \omega^c \end{pmatrix}
         $$
 
-        <p>由此我们获得了四个轮子的期望速度 $v_1, v_2, v_3, v_4$，以及舵轮的期望角度 $\delta_2$ 和 $\delta_3$（由速度方向获得）。</p>
+        <p>From this we obtain the four desired wheel speeds $v_1, v_2, v_3, v_4$, as well as the desired steering angles $\delta_2$ and $\delta_3$ (recovered from the velocity directions).</p>
 
-        <h3>为什么先确定舵向？</h3>
+        <h3>Why Fix the Steering Angles First?</h3>
         <p>
-          一个自然的想法是：能否直接从力分配方程中同时解出轮向力和舵向角度？如果这样做，我们面对的是由 3 个非线性方程解 6 个未知量（四个力 + 两个角度），非常困难。而如果先通过速度正解算确定舵向角度，力分配问题就退化为一个<em>欠定线性方程组</em>——将舵向与力分配分离，是整个控制架构中最关键的工程判断。
+          A natural question is: why not simultaneously solve for the wheel forces and steering angles from the force-distribution equations? Doing so would require solving 6 unknowns (four force magnitudes + two steering angles) from 3 nonlinear equations — a far harder problem. By first fixing the steering angles via velocity decomposition, the force-distribution problem reduces to an <em>underdetermined linear system</em>. This decoupling of steering and force distribution is the single most important architectural decision in the entire control pipeline.
         </p>
 
-        <h2>4. 逆向运动学：卡尔曼滤波观测速度</h2>
-        <p>逆向运动学的任务是从四个轮子的实测速度反推出底盘中心的真实速度 $(v_x^c, v_y^c, \omega^c)$。</p>
+        <h2>4. Inverse Kinematics: Kalman-Filter Velocity Observation</h2>
+        <p>The purpose of inverse kinematics is to estimate the true chassis-center velocity $(v_x^c, v_y^c, \omega^c)$ from the four measured wheel speeds.</p>
 
-        <h3>为什么需要滤波？</h3>
+        <h3>Why Filtering?</h3>
         <p>
-          直接使用 Moore-Penrose 伪逆虽然简单快捷，但存在两个问题：测量噪声导致的结果不光滑，对后续 PID 控制不友好；某些轮子打滑时，它们提供的信息不可靠，应降低权重。为此我们使用卡尔曼滤波器进行状态估计。
+          Direct use of the Moore-Penrose pseudoinverse (i.e., $\boldsymbol{B}^+ \boldsymbol{A} (v_1, v_2, v_3, v_4)^\top$) is simple and fast, but suffers from two problems: measurement noise makes the result non-smooth — unfriendly for downstream PID control — and slipping wheels produce unreliable data whose weight should be reduced. We therefore use a Kalman filter for state estimation.
         </p>
 
-        <h3>滤波器设计</h3>
-        <p>状态向量：</p>
+        <h3>Filter Design</h3>
+        <p>State vector:</p>
         $$
         \boldsymbol{x} = (v_x^c, v_y^c, \omega^c)^\top
         $$
-        <p>观测量：</p>
+        <p>Measurement vector:</p>
         $$
         \boldsymbol{z} = (v_1, v_2, v_3, v_4)^\top
         $$
         <p>
-          由于底盘加速度难以直接获取，我们假设底盘中心速度和角速度在相邻时钟周期之间保持恒定（$\boldsymbol{u}_k = \boldsymbol{0}$）。考虑惯性系下的运动：上一个时钟周期内底盘绕自身中心转过角度 $\omega\, dt$，当前周期惯性系下的速度需通过二维旋转获得：
+          Since direct measurement of chassis acceleration is unavailable, we assume the chassis-center velocity and angular velocity remain constant between consecutive time steps ($\boldsymbol{u}_k = \boldsymbol{0}$). In the inertial frame, the chassis rotates by $\omega\, dt$ during one time step, so the inertial-frame velocity must be rotated:
         </p>
         $$
         \boldsymbol{F}_k =
@@ -142,7 +143,7 @@
           0 & 0 & 1
         \end{pmatrix}
         $$
-        <p>观测矩阵取为 $\boldsymbol{H}_k = \boldsymbol{A}^+ \boldsymbol{B}$（直接利用正向运动学中的关系）：</p>
+        <p>The observation matrix is $\boldsymbol{H}_k = \boldsymbol{A}^+ \boldsymbol{B}$ (reusing the forward-kinematics relationship):</p>
         $$
         \boldsymbol{H}_k =
         \begin{pmatrix}
@@ -152,15 +153,15 @@
           \sin\beta & \cos\beta & c
         \end{pmatrix}
         $$
-        <p>标准离散卡尔曼滤波的五个方程在此具体化为：</p>
-        <p><strong>预测步：</strong></p>
+        <p>The five standard discrete-time Kalman filter equations specialize to our case as follows.</p>
+        <p><strong>Predict step:</strong></p>
         $$
         \boldsymbol{x}_k^- = \boldsymbol{F}_k \boldsymbol{x}_{k-1} + \boldsymbol{B}_k \boldsymbol{u}_k = \boldsymbol{F}_k \boldsymbol{x}_{k-1} \quad (\boldsymbol{u}_k = \boldsymbol{0})
         $$
         $$
         \boldsymbol{P}_k^- = \boldsymbol{F}_k \boldsymbol{P}_{k-1} \boldsymbol{F}_k^\mathsf{T} + \boldsymbol{Q}
         $$
-        <p><strong>更新步：</strong></p>
+        <p><strong>Update step:</strong></p>
         $$
         \boldsymbol{K}_k = \boldsymbol{P}_k^- \boldsymbol{H}_k^\mathsf{T} (\boldsymbol{H}_k \boldsymbol{P}_k^- \boldsymbol{H}_k^\mathsf{T} + \boldsymbol{R})^{-1}
         $$
@@ -172,17 +173,17 @@
         $$
 
         <p>
-          其中 $\boldsymbol{x}_k^-$ 和 $\boldsymbol{P}_k^-$ 分别为先验状态估计和先验误差协方差，$\boldsymbol{K}_k$ 为卡尔曼增益，$\boldsymbol{x}_k$ 和 $\boldsymbol{P}_k$ 为后验状态估计和后验误差协方差。$\boldsymbol{H}_k$ 的计算见上文——它依赖于每一时刻的舵向角 $\delta_2, \delta_3$，因此需要在每个控制周期中重新计算。
+          Here $\boldsymbol{x}_k^-$ and $\boldsymbol{P}_k^-$ are the a priori state estimate and error covariance, $\boldsymbol{K}_k$ is the Kalman gain, and $\boldsymbol{x}_k$ and $\boldsymbol{P}_k$ are the a posteriori estimates. Note that $\boldsymbol{H}_k$ depends on the instantaneous steering angles $\delta_2, \delta_3$ and must be recomputed every control cycle.
         </p>
         <p>
-          过程噪声协方差矩阵 $\boldsymbol{Q}$ 和测量噪声协方差矩阵 $\boldsymbol{R}$ 的设定是滤波器表现的关键。$\boldsymbol{Q}$ 反映了我们对"速度恒定"这一假设的信任程度——值越大，滤波器越倾向于相信测量；$\boldsymbol{R}$ 反映了对轮速传感器噪声水平的估计——值越大，滤波器越倾向于相信模型预测。在没有外部参考速度的情况下，可以先用 Moore-Penrose 伪逆的直接解算结果作为参考，观察滤波器的滞后表现，据此调节两个协方差矩阵。此外，还可以结合卡方检验等方法来判断测量值的可信度，进一步提高估计的准确性。
+          The process-noise covariance $\boldsymbol{Q}$ and measurement-noise covariance $\boldsymbol{R}$ are the key tuning parameters. $\boldsymbol{Q}$ encodes how much we trust the constant-velocity assumption — larger values make the filter lean toward measurements. $\boldsymbol{R}$ encodes the expected noise level of the wheel-speed sensors — larger values make the filter lean toward the model prediction. With no external velocity reference, one can start by using the direct Moore-Penrose pseudoinverse solution as a baseline and observe the filter's lag to guide tuning. Chi-squared tests can further be incorporated to assess the credibility of individual measurements and improve estimation accuracy.
         </p>
 
-        <h2>5. 初步力分配：Moore-Penrose 广义逆</h2>
-        <p>当舵向角 $\delta_2, \delta_3$ 由速度正解算确定后，剩下四个轮向电机需要提供期望的合力与合力矩 $(F_x^c, F_y^c, T^c)$。</p>
+        <h2>5. Preliminary Force Distribution: Moore-Penrose Pseudoinverse</h2>
+        <p>Once the steering angles $\delta_2, \delta_3$ are determined by forward kinematics, the remaining four wheel motors must collectively produce the desired net force and torque $(F_x^c, F_y^c, T^c)$.</p>
 
-        <h3>基本力平衡方程</h3>
-        <p>根据力的分解和力矩平衡：</p>
+        <h3>Force-Balance Equation</h3>
+        <p>From force decomposition and torque balance:</p>
         $$
         \underbrace{
         \begin{pmatrix}
@@ -195,44 +196,44 @@
         =
         \begin{pmatrix} F_x^c \\ F_y^c \\ T^c \end{pmatrix}
         $$
-        <p>将此方程记为 $\boldsymbol{C}\boldsymbol{x} = \boldsymbol{y}$。</p>
+        <p>Denote this as $\boldsymbol{C}\boldsymbol{x} = \boldsymbol{y}$.</p>
 
-        <h3>系数矩阵的性质</h3>
+        <h3>Properties of the Coefficient Matrix</h3>
         <p>
-          $\boldsymbol{C}$ 是一个 $3 \times 4$ 矩阵，因此 $\operatorname{rank}(\boldsymbol{C}) \le 3$。从物理意义出发可以确信三个方程是独立的（数学上也可严格证明），故 $\operatorname{rank}(\boldsymbol{C}) = 3$，$\boldsymbol{C}$ 行满秩。由秩-零化度定理，$\dim\operatorname{Ker}(\boldsymbol{C}) = 1$——解空间是 $\mathbb{R}^4$ 中的一条直线。
+          $\boldsymbol{C}$ is $3 \times 4$, so $\operatorname{rank}(\boldsymbol{C}) \le 3$. Physically the three equations are independent (and this can be proven mathematically), hence $\operatorname{rank}(\boldsymbol{C}) = 3$: $\boldsymbol{C}$ has full row rank. By the rank-nullity theorem, $\dim\operatorname{Ker}(\boldsymbol{C}) = 1$ — the solution space is a line in $\mathbb{R}^4$.
         </p>
 
-        <h3>Moore-Penrose 广义逆与最小范数解</h3>
-        <p>由于 $\boldsymbol{C}$ 行满秩，其 Moore-Penrose 广义逆有简洁的右逆表达式：</p>
+        <h3>Moore-Penrose Pseudoinverse and the Minimum-Norm Solution</h3>
+        <p>Since $\boldsymbol{C}$ has full row rank, its Moore-Penrose pseudoinverse takes the compact right-inverse form:</p>
         $$
         \boldsymbol{C}^+ = \boldsymbol{C}^\mathsf{H} (\boldsymbol{C} \boldsymbol{C}^\mathsf{H})^{-1}
         $$
         <p>
-          这里涉及的所有矩阵规模都非常小（$3\times 3$ 的求逆），在单片机上完全可以实时完成。使用 $\boldsymbol{C}^+$ 获得方程的最小范数解：$\boldsymbol{x}_{\text{pre}} = \boldsymbol{C}^+ \boldsymbol{y}$。最小范数解的物理意义是在满足力和力矩需求的前提下，让四个电机出力尽可能均匀，避免电机之间无谓地相互对抗。
+          All matrices involved are small (the inversion is only $3\times 3$), easily handled on a microcontroller in real time. The minimum-norm solution $\boldsymbol{x}_{\text{pre}} = \boldsymbol{C}^+ \boldsymbol{y}$ distributes the effort as evenly as possible among the four motors while satisfying the force and torque requirements, avoiding unnecessary antagonism between motors.
         </p>
 
-        <h2>6. 力分配优化：重心偏移、轮速反馈与三分法寻优</h2>
+        <h2>6. Force Distribution Optimization: Center-of-Gravity Offset, Wheel-Speed Feedback, and Ternary Search</h2>
         <p>
-          初步的最小范数解 $\boldsymbol{x}_{\text{pre}}$ 在简单场景下工作良好，但它没有考虑底盘在实际运动中各个轮子<em>能提供的最大摩擦力并不相等</em>这一事实。优化的核心思路是：先通过物理模型计算出各轮正压力的比例——这决定了它们能承受的最大摩擦力的比例——再结合轮速反馈进行微调，最后用三分法在 $\operatorname{Ker}(\boldsymbol{C})$ 张成的直线上寻找最接近目标比例的力分配。
+          The minimum-norm solution $\boldsymbol{x}_{\text{pre}}$ works well in simple scenarios, but it ignores a critical physical fact: during actual motion, <em>the maximum friction each wheel can provide is not equal</em>. The core idea of our optimization is: first compute the normal-force ratio on each wheel from a physical model — this determines the ratio of maximum friction available — then refine the ratios online using wheel-speed feedback, and finally use ternary search along the kernel-space line to find the force distribution that best matches the adjusted ratios.
         </p>
 
-        <h3>6.1 重心偏移与正压力估计</h3>
+        <h3>6.1 Center-of-Gravity Offset and Normal-Force Estimation</h3>
         <p>
-          由于云台、弹药箱等设备的安装，底盘的等效质心通常不在几何中心，且距离地面有一定高度 $h$。当底盘加速、减速或转向时，惯性力会产生附加力矩，改变四个轮子的正压力分布。
+          Because of the gimbal, ammunition box, and other equipment, the effective center of gravity is usually not at the geometric center of the chassis, and sits at a height $h$ above the ground. When the chassis accelerates, brakes, or turns, inertial forces produce additional moments that redistribute the normal forces on the four wheels.
         </p>
-        <p>记四个轮子所受地面的正压力为 $F_1', F_2', F_3', F_4'$（注意：这是正压力，不是轮子提供的驱动力）。通过加速度计获得底盘加速度 $(a_x, a_y, a_z)$，从受力与力矩平衡出发：</p>
+        <p>Let $F_1', F_2', F_3', F_4'$ denote the ground normal forces on the four wheels (not to be confused with the driving forces $F_i$). From the accelerometer we obtain the chassis acceleration $(a_x, a_y, a_z)$. Force and moment balance gives:</p>
         <ul>
-          <li><strong>$z$ 方向受力平衡：</strong>$F_1' + F_2' + F_3' + F_4' = m a_z$</li>
-          <li><strong>绕 $y$ 轴的力矩平衡：</strong>惯性力 $-m a_x$ 作用于高度 $h$ 处产生力矩 $-m a_x h$，这个力矩由正压力的不对称来抵消：$-m a_x h + F_1' c + F_2' c - F_3' c - F_4' c = 0$</li>
-          <li><strong>绕 $x$ 轴的力矩平衡：</strong>同理，$m a_y h + F_1' c - F_2' c - F_3' c + F_4' c = 0$</li>
+          <li><strong>Force balance in $z$:</strong> $F_1' + F_2' + F_3' + F_4' = m a_z$</li>
+          <li><strong>Moment balance about the $y$-axis:</strong> the inertial force $-m a_x$ acting at height $h$ produces a moment $-m a_x h$, which must be countered by asymmetry in the normal forces: $-m a_x h + F_1' c + F_2' c - F_3' c - F_4' c = 0$</li>
+          <li><strong>Moment balance about the $x$-axis:</strong> similarly, $m a_y h + F_1' c - F_2' c - F_3' c + F_4' c = 0$</li>
         </ul>
         <p>
-          以上 3 个方程不足以唯一确定四个未知正压力。为此引入<strong>刚性平面假设</strong>：底盘是刚体，四个轮子接触在同一平面上，对角方向的正压力之和相等：
+          These three equations are insufficient to uniquely determine four unknowns. We therefore introduce the <strong>rigid-plane assumption</strong>: the chassis is a rigid body, the four wheels contact the same plane, and the sums of normal forces on opposite diagonal pairs are equal:
         </p>
         $$
         F_1' + F_3' = F_2' + F_4'
         $$
-        <p>至此得到完整的线性方程组：</p>
+        <p>This yields the complete linear system:</p>
         $$
         \begin{pmatrix}
           1 & 1 & 1 & 1 \\
@@ -244,7 +245,7 @@
         =
         \begin{pmatrix} m a_z \\ m a_x h \\ -m a_y h \\ 0 \end{pmatrix}
         $$
-        <p>系数矩阵满秩，可直接求逆得到解析解：</p>
+        <p>The coefficient matrix is full-rank, giving the closed-form solution:</p>
         $$
         \begin{pmatrix} F_1' \\ F_2' \\ F_3' \\ F_4' \end{pmatrix}
         =
@@ -257,97 +258,97 @@
         \end{pmatrix}
         $$
         <p>
-          这个结果直观地反映了物理规律：加速时（$a_x > 0$），后侧舵轮（$F_2', F_3'$）的正压力增大，前侧全向轮（$F_1', F_4'$）的正压力减小——这正是上坡时前轮容易打滑的根本原因。侧向加速（$a_y \neq 0$）会导致左右两侧的正压力不对称。
+          This result captures clear physical intuition: during forward acceleration ($a_x > 0$), the rear steering wheels ($F_2', F_3'$) gain normal force while the front omni wheels ($F_1', F_4'$) lose it — exactly why the front wheels tend to slip when climbing a slope. Lateral acceleration ($a_y \neq 0$) creates left-right asymmetry.
         </p>
 
-        <h3>6.2 构建目标力比例</h3>
+        <h3>6.2 Constructing the Target Force Ratio</h3>
         <p>
-          我们关心的是各轮正压力的<em>比例</em>而非绝对值。将上述解析解归一化，得到一个四维向量 $\boldsymbol{p} = (p_1, p_2, p_3, p_4)$，其中 $p_i \propto F_i'$ 且 $\sum p_i = 1$。这个向量的物理含义是：在当前的底盘运动状态下，四个轮子各自能承受的最大摩擦力的<em>理想</em>比例。
+          We care about the <em>ratio</em> of normal forces, not their absolute magnitudes. Normalize the closed-form solution to obtain a vector $\boldsymbol{p} = (p_1, p_2, p_3, p_4)$ with $p_i \propto F_i'$ and $\sum p_i = 1$. The physical interpretation: under the current chassis motion, this is the <em>ideal</em> ratio of maximum friction available at each wheel.
         </p>
         <p>
-          设 $\operatorname{Ker}(\boldsymbol{C})$ 中的非零单位向量为 $\boldsymbol{k}$（通过高斯消元获得，并使第一分量为正）。我们想要在直线 $\{ \boldsymbol{x}_{\text{pre}} + \lambda \boldsymbol{k} \mid \lambda \in \mathbb{R} \}$ 上选取一个点，使得这个点的各分量比例尽可能接近 $\boldsymbol{p}$。衡量"接近程度"的指标是余弦相似度：
+          Let $\boldsymbol{k}$ be a unit vector spanning $\operatorname{Ker}(\boldsymbol{C})$ (obtained via Gaussian elimination, with the first component made positive). The solution space is the line $\{ \boldsymbol{x}_{\text{pre}} + \lambda \boldsymbol{k} \mid \lambda \in \mathbb{R} \}$. We want to pick a point on this line whose component ratios are as close as possible to $\boldsymbol{p}$. The quality of match is measured by cosine similarity:
         </p>
         $$
         \cos\theta(\lambda) = \frac{\boldsymbol{p} \cdot (\boldsymbol{x}_{\text{pre}} + \lambda \boldsymbol{k})}{\|\boldsymbol{x}_{\text{pre}} + \lambda \boldsymbol{k}\|}
         $$
 
-        <h3>6.3 轮速反馈调整目标比例</h3>
+        <h3>6.3 Wheel-Speed Feedback: Adjusting the Target Ratio Online</h3>
         <p>
-          上述正压力估计给出的是<em>静态</em>比例——它没有考虑轮子实际与地面的接触状态。在实践中，我们需要根据轮子的实际转速对目标比例进行动态调整：
+          The normal-force estimate above yields a <em>static</em> ratio — it does not account for the actual contact state between each wheel and the ground. In practice, we dynamically adjust the target ratio based on observed wheel speeds:
         </p>
         <ul>
-          <li>计算每个轮子的实测转速与期望转速（由正向运动学解算得出）的比值；</li>
-          <li>如果某一轮子的实测转速<em>明显快于</em>期望转速，说明该轮子正在打滑，地面摩擦力不足以提供其对应的目标力；此时应<em>衰减</em>该轮子在 $\boldsymbol{p}$ 中的对应分量；</li>
-          <li>当该轮子的转速回归正常后，其分量<em>逐渐恢复</em>到原始值。</li>
+          <li>For each wheel, compute the ratio of measured speed to desired speed (the latter from forward kinematics);</li>
+          <li>If a wheel spins <em>noticeably faster</em> than desired, it is slipping — the ground cannot provide the friction corresponding to its target force. <em>Attenuate</em> that wheel's component in $\boldsymbol{p}$;</li>
+          <li>When the wheel's speed returns to normal, <em>gradually restore</em> its original component.</li>
         </ul>
         <p>
-          换句话说，正压力估计提供了初始的 $\boldsymbol{p}$，而轮速反馈负责对这个 $\boldsymbol{p}$ 进行持续的在线修正。修正后的目标比例向量记为 $\tilde{\boldsymbol{p}}$。
+          In other words, the normal-force estimate provides an initial $\boldsymbol{p}$, and the wheel-speed feedback continuously corrects it online. The adjusted target-ratio vector is denoted $\tilde{\boldsymbol{p}}$.
         </p>
 
-        <h3>6.4 三分法寻优</h3>
+        <h3>6.4 Ternary Search for the Optimal Coefficient</h3>
         <p>
-          现在问题转化为：在 $\lambda$ 的合理范围（比如 $[-1000, 1000]$）内，寻找使 $\cos\theta(\lambda)$ 最大化的 $\lambda$。由于余弦函数沿直线方向是单峰的（在合理范围内只有一个极大值），可以使用<strong>三分法</strong>高效求解：
+          The problem now is: over a reasonable range of $\lambda$ (e.g., $[-1000, 1000]$), find the $\lambda$ that maximizes $\cos\theta(\lambda)$. Since the cosine function along the line is unimodal within a reasonable interval (only one maximum exists), <strong>ternary search</strong> provides an efficient solution:
         </p>
         <ol>
-          <li>设搜索区间 $[l, r]$，容差 $\varepsilon = 0.05$；</li>
-          <li>取两个三分点 $m_1 = (2l + r)/3$ 和 $m_2 = (l + 2r)/3$；</li>
-          <li>计算 $\cos\theta(m_1)$ 和 $\cos\theta(m_2)$；注意计算时需要统一正负号——若 $\boldsymbol{x}_{\text{pre}}$ 的某一分量为负，则 $\tilde{\boldsymbol{p}}$ 的对应分量也取反，以确保目标与解的方向一致性；</li>
-          <li>如果 $\cos\theta(m_1) < \cos\theta(m_2)$，则收缩到 $[m_1, r]$；否则收缩到 $[l, m_2]$；</li>
-          <li>反复迭代直至 $r - l < \varepsilon$。</li>
+          <li>Start with search interval $[l, r]$ and tolerance $\varepsilon = 0.05$;</li>
+          <li>Evaluate at the two ternary points $m_1 = (2l + r)/3$ and $m_2 = (l + 2r)/3$;</li>
+          <li>Compute $\cos\theta(m_1)$ and $\cos\theta(m_2)$. Note: if any component of $\boldsymbol{x}_{\text{pre}}$ is negative, negate the corresponding component of $\tilde{\boldsymbol{p}}$ as well, so that the target direction is consistent with the force direction;</li>
+          <li>If $\cos\theta(m_1) < \cos\theta(m_2)$, shrink the interval to $[m_1, r]$; otherwise shrink to $[l, m_2]$;</li>
+          <li>Iterate until $r - l < \varepsilon$.</li>
         </ol>
-        <p>最终得到的 $\lambda^*$ 给出优化后的力分配：</p>
+        <p>The resulting $\lambda^*$ gives the optimized force distribution:</p>
         $$
         \boldsymbol{x} = \boldsymbol{x}_{\text{pre}} + \lambda^* \boldsymbol{k}
         $$
 
-        <h3>6.5 轮子悬空处理</h3>
+        <h3>6.5 Handling Suspended Wheels</h3>
         <p>
-          当某一轮子完全悬空时，其转速会远大于其他轮子（电机空转）。此时不需要复杂的比例调整——直接将悬空轮的力矩置零，待其转速回归合理范围后再恢复输出即可。这是对整个优化框架的一个安全性补充。
+          When a wheel completely loses ground contact, its speed will be far higher than the others (the motor spins freely). In this case the elaborate ratio adjustment is unnecessary — simply zero out that wheel's force, and restore it once the wheel speed returns to a reasonable range. This is a safety fallback that complements the optimization framework.
         </p>
 
-        <h2>7. 功率控制</h2>
-        <p>功率控制是整个力控流程的最后一步。其目标是在裁判系统给定的功率限制下，尽可能保持力分配的比例不变。</p>
+        <h2>7. Power Control</h2>
+        <p>Power control is the final step in the pipeline. Its goal is to respect the power limit imposed by the referee system while preserving the force-distribution ratios as faithfully as possible.</p>
 
-        <h3>电机功率模型</h3>
-        <p>对单个电机，建立如下功率模型：</p>
+        <h3>Motor Power Model</h3>
+        <p>We model the power of an individual motor as:</p>
         $$
         P = k_1 \omega^2 + k_2 I^2 + k_3 I\omega + k_4 |\omega| + a
         $$
         <p>
-          其中 $\omega$ 为电机转速（经减速比换算），$I$ 为电流。$k_1 \omega^2$ 对应机械损耗（与转速平方成正比），$k_2 I^2$ 对应铜损（焦耳热，与电流平方成正比），$k_3 I \omega$ 对应电磁功率（电流与转速的乘积），$k_4 |\omega|$ 对应与转速线性相关的杂散损耗，$a$ 为常数项（空载待机功率）。各系数可通过采集实验数据后使用最小二乘拟合获得。
+          where $\omega$ is the motor speed (after gear reduction) and $I$ is the current. The term $k_1\omega^2$ captures mechanical losses (proportional to speed squared), $k_2 I^2$ captures copper losses (Joule heating, proportional to current squared), $k_3 I\omega$ is the electromagnetic power (product of current and speed), $k_4|\omega|$ captures speed-linear stray losses, and $a$ is a constant term (idle standby power). The coefficients can be obtained by least-squares fitting to experimentally collected data.
         </p>
 
-        <h3>功率分配策略</h3>
-        <p>功率控制遵循两级策略：</p>
+        <h3>Power Allocation Strategy</h3>
+        <p>Power control follows a two-stage strategy:</p>
         <ol>
-          <li><strong>舵向电机优先：</strong>先估算两个舵向电机（6020）的功率。若超出舵向电机的分项限制，则计算功率因子，通过求解二次方程确定每个舵向电机的电流缩放。</li>
-          <li><strong>轮向电机分配：</strong>将剩余可用功率分配给四个轮向电机（M3508）。若总估算功率超出可用功率，为<em>所有</em>轮向电机的电流乘上同一个因子，以保证力分配的比例不变。</li>
+          <li><strong>Steering motors first:</strong> estimate the power consumption of the two steering motors (6020). If it exceeds their allocated limit, compute a power factor and scale each steering motor's current accordingly (by solving a quadratic equation).</li>
+          <li><strong>Wheel motors second:</strong> allocate the remaining available power to the four wheel motors (M3508). If the total estimated power exceeds the available power, multiply <em>all</em> wheel-motor currents by a single factor, preserving the force-distribution ratios.</li>
         </ol>
 
-        <h3>保持力比例的关键性</h3>
+        <h3>Why Preserving the Force Ratio Matters</h3>
         <p>
-          这里有一个关键的工程细节：当功率不足时，应当等比例缩放<em>电流（即力矩）</em>，而非等比例缩放<em>功率</em>。如果等比例缩放各电机的功率，由于功率与电流的非线性关系（$I^2$ 项的存在），会导致各轮力矩的比例发生改变，从而改变合力的方向——这对底盘控制来说是灾难性的。等比例缩放电流则能精确保持各轮出力之间的比例关系。
+          A critical engineering detail: when power is insufficient, scale <em>currents</em> (i.e., torques) by a common factor, not <em>powers</em>. If powers were scaled proportionally, the nonlinear relationship between power and current (due to the $I^2$ term) would distort the torque ratios among the wheels, changing the direction of the net force — which would be disastrous for chassis control. Scaling all currents by the same factor preserves the relative proportions exactly; the net force direction remains correct, only its magnitude is reduced.
         </p>
         <p>
-          从数学上看，求解等比例电流缩放因子 $\lambda$ 归结为解一个二次方程 $a \lambda^2 + b \lambda + c = 0$：$a$ 综合了各电机功率模型中的 $k_2 I^2$ 项，$b$ 综合了 $k_3 I \omega$ 项，$c$ 综合了 $k_1 \omega^2 + k_4 |\omega| + a$ 以及各电机常数项之和与目标功率的差值。出于物理原因（功率随电流单调递增），该方程在 $[0, 1]$ 内必有唯一实根。
-        </p>
-
-        <h3>电流上限</h3>
-        <p>
-          在将最终结果写入电机控制器之前，还需检查是否超出电机的电流上限（对于 M3508 而言为 20A）。若任一电机电流超限，同样对所有轮向电机乘以同一缩放因子，确保电流不超限的同时保持力方向不变。
+          Mathematically, finding the common current-scaling factor $\lambda$ reduces to solving a quadratic equation $a \lambda^2 + b \lambda + c = 0$: $a$ aggregates the $k_2 I^2$ terms from all four motors, $b$ aggregates the $k_3 I \omega$ terms, and $c$ aggregates the $k_1 \omega^2 + k_4 |\omega| + a$ terms plus the constant idle powers minus the available power budget. For physical reasons (power increases monotonically with current), this equation always has a unique real root in $[0, 1]$.
         </p>
 
-        <h2>8. 总结</h2>
-        <p>本文系统地梳理了半舵半全向底盘控制的核心技术链路：</p>
+        <h3>Current Limit</h3>
+        <p>
+          Before writing the final values to the motor controllers, check whether any current exceeds the motor's hardware limit (20 A for the M3508). If so, scale all wheel-motor currents by the same factor to stay within limits while preserving the force direction.
+        </p>
+
+        <h2>8. Summary</h2>
+        <p>This article has systematically laid out the core technical pipeline for a semi-steering, semi-omni chassis:</p>
         <ul>
-          <li><strong>速度正解算</strong>将舵向与力分配解耦，把一个非线性问题转化为两个独立的线性问题；</li>
-          <li><strong>卡尔曼滤波</strong>提供了平滑且鲁棒的速度观测；</li>
-          <li><strong>Moore-Penrose 广义逆</strong>给出了力分配的最小范数基准解；</li>
-          <li><strong>重心偏移 + 轮速反馈 + 三分法</strong>构成了完整的力分配优化框架：正压力估计给出目标比例的物理基础，轮速反馈进行在线修正，三分法在零空间中搜索最优解；</li>
-          <li><strong>功率控制</strong>通过等比例缩放电流，在功率受限时保持了力方向不变。</li>
+          <li><strong>Forward kinematics</strong> decouples steering from force distribution, reducing a nonlinear problem to two independent linear ones;</li>
+          <li><strong>Kalman filtering</strong> provides smooth and robust velocity observation;</li>
+          <li><strong>Moore-Penrose pseudoinverse</strong> gives the minimum-norm baseline for force distribution;</li>
+          <li><strong>Center-of-gravity offset + wheel-speed feedback + ternary search</strong> form the complete optimization framework: normal-force estimation provides a physically grounded target ratio, wheel-speed feedback corrects it online, and ternary search finds the optimal solution in the kernel space;</li>
+          <li><strong>Power control</strong> preserves force-direction fidelity by scaling currents uniformly under power constraints.</li>
         </ul>
         <p>
-          贯穿整个设计的一个核心思想是<em>保持力的比例关系</em>——无论是在功率控制中缩放电流而非功率，还是在三分法寻优中使用余弦相似度作为目标函数，都是为了保证合力方向的正确性。在实际比赛中，这比追求某个轮子的最优出力更为重要。
+          A single design principle runs through the entire pipeline: <em>preserve the force ratio</em>. Whether it is scaling currents rather than powers during power control, or using cosine similarity as the objective function in the ternary search, every decision is made to keep the direction of the net force correct. In competition, this matters far more than squeezing the last bit of performance out of any single wheel.
         </p>
 
       </div>
@@ -365,6 +366,7 @@
         <a href="../../">Home</a>
         <a href="../">Blog</a>
         <a href="../../resume/">Resume</a>
+        <a href="../../links/">Links</a>
         <a href="mailto:lyh@mail.ustc.edu.cn">Email</a>
       </div>
     </div>

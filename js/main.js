@@ -11,7 +11,7 @@
   // ============================================================
   const blogPosts = [
     {
-      title: '半舵半全向底盘控制：从速度解算到力矩分配的系统性思路',
+      title: 'Semi-Steering Semi-Omni Chassis Control: From Velocity Decomposition to Torque Distribution',
       date: '2025-01-15',
       excerpt: '系统地梳理半舵半全向底盘的核心控制链路：速度正解算、卡尔曼滤波逆向观测、Moore-Penrose广义逆力分配、零空间打滑补偿、重心偏移力矩平衡与功率控制。',
       url: 'posts/chassis-control.html',
