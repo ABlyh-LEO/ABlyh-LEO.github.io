@@ -157,20 +157,17 @@ h1, h2, h3, h4 {
   content: '';
   position: absolute;
   bottom: -2px;
-  left: 0;
+  left: 50%;
   width: 0;
   height: 1.5px;
   background: var(--color-accent);
-  transition: width 0.25s ease;
+  transition: width 0.3s ease, left 0.3s ease;
 }
 
-.nav-links a:hover,
-.nav-links a.active {
-  color: var(--color-primary);
-}
 .nav-links a:hover::after,
 .nav-links a.active::after {
   width: 100%;
+  left: 0;
 }
 
 .nav-blog-btn {
@@ -234,10 +231,12 @@ h1, h2, h3, h4 {
 .hero::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -20px;
   background-image: radial-gradient(circle, rgba(26,54,93,0.06) 1px, transparent 1px);
   background-size: 28px 28px;
   pointer-events: none;
+  transform: translate(var(--mx, 0px), var(--my, 0px));
+  transition: transform 0.3s ease-out;
   mask-image: radial-gradient(ellipse 60% 60% at 70% 40%, black 30%, transparent 70%);
   -webkit-mask-image: radial-gradient(ellipse 60% 60% at 70% 40%, black 30%, transparent 70%);
 }
@@ -377,6 +376,101 @@ h1, h2, h3, h4 {
 @keyframes float {
   0%, 100% { transform: translateX(-50%) translateY(0); }
   50% { transform: translateX(-50%) translateY(6px); }
+}
+
+/* --- Hero Text Stagger Reveal --- */
+.hero-text > * {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.hero-text.hero-revealed > * {
+  animation: heroFadeIn 0.6s ease forwards;
+}
+
+.hero-text.hero-revealed > *:nth-child(1) { animation-delay: 0.05s; }
+.hero-text.hero-revealed > *:nth-child(2) { animation-delay: 0.15s; }
+.hero-text.hero-revealed > *:nth-child(3) { animation-delay: 0.22s; }
+.hero-text.hero-revealed > *:nth-child(4) { animation-delay: 0.30s; }
+.hero-text.hero-revealed > *:nth-child(5) { animation-delay: 0.40s; }
+.hero-text.hero-revealed > *:nth-child(6) { animation-delay: 0.50s; }
+
+@keyframes heroFadeIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Avatar Breathing Glow --- */
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.25); }
+  50% { box-shadow: 0 0 0 14px rgba(37, 99, 235, 0); }
+}
+
+.hero-avatar {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* --- Deco Ring Rotation --- */
+.hero-deco-ring {
+  animation: ringRotate 20s linear infinite;
+}
+
+.hero-deco-ring:nth-child(3) {
+  animation-duration: 28s;
+  animation-direction: reverse;
+}
+
+@keyframes ringRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* --- Card Gloss Scan --- */
+.link-card, .blog-card {
+  overflow: hidden;
+}
+
+.link-card::after, .blog-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.55s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.link-card > *, .blog-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.link-card:hover::after, .blog-card:hover::after {
+  left: 120%;
+}
+
+/* --- Skill Tag Hover Enhancement --- */
+.skill-tag:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.skill-tag-lg:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+/* --- Scroll Reveal Enhancement --- */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(24px) scale(0.97);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+[data-reveal].revealed {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 /* --- Section Layout --- */
@@ -725,6 +819,7 @@ h1, h2, h3, h4 {
 }
 
 .blog-card {
+  position: relative;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -1082,6 +1177,7 @@ h1, h2, h3, h4 {
 
 /* --- Links Page Cards --- */
 .link-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 1.2rem;
